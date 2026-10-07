@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"os/signal"
 	"time"
 )
 
@@ -108,19 +109,27 @@ func main() {
 		Next:    make([]uint8, width*height),
 		Rule:    0x1808,
 	}
-
+	fmt.Print("\033[?25l")       // hide cursor
+	defer fmt.Print("\033[?25h") // show cursor when done
+	ticks := 0
 	ticker := time.NewTicker(67 * time.Millisecond)
 	defer ticker.Stop()
-	done := make(chan bool)
-	go func() {
-		time.Sleep(30 * time.Second)
-		done <- true
-	}()
+
+	timeout := time.After(30 * time.Second)
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+
 	first := true
 	for {
 		select {
-		case <-done:
+		case <-timeout:
 			fmt.Println("Done!")
+			fmt.Printf("Game over after %d ticks\n", ticks)
+			return
+		case interrupt := <-c:
+			fmt.Println("Got signal:", interrupt)
+			fmt.Printf("Game over after %d ticks\n", ticks)
 			return
 		case <-ticker.C:
 			if !first {
@@ -130,6 +139,7 @@ func main() {
 			u.b.WriteTo(os.Stdout)
 			u.b.Reset()
 			first = false
+			ticks++
 		}
 	}
 }
