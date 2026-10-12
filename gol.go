@@ -89,6 +89,13 @@ func (u *Universe) CurrentFrame(first bool) error {
 	return nil
 }
 
+func (u *Universe) countLiveCells() {
+	u.liveCount = 0
+	for i := range u.Current {
+		u.liveCount += i
+	}
+}
+
 func (u *Universe) LiveCount() int {
 	return u.liveCount
 }
@@ -176,6 +183,23 @@ func insertTicks(ctx context.Context, db *sql.DB, runID uint32, ticks *[]Tick) e
 	return nil
 }
 
+func createSavesTable(ctx context.Context, db *sql.DB) error {
+	_, err := db.ExecContext(ctx,
+		`CREATE TABLE IF NOT EXISTS saves (
+			name TEXT PRIMARY KEY,
+			run_id INTEGER,
+			frame INTEGER,
+			current BLOB,
+
+			FOREIGN KEY (run_id) REFERENCES runs(id)
+		)`,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return err
+}
+
 func main() {
 	const (
 		width  = 15
@@ -212,6 +236,7 @@ func main() {
 		Next:    make([]uint8, width*height),
 		Rule:    0x1808,
 	}
+	u.countLiveCells()
 	fmt.Print("\033[?25l")       // hide cursor
 	defer fmt.Print("\033[?25h") // show cursor when done
 	ticks := 0
