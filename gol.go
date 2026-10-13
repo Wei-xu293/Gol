@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"flag"
 	"fmt"
 	"hash/fnv"
 	"log"
@@ -106,7 +107,7 @@ func (u *Universe) CurrentHash() uint32 {
 	return h.Sum32()
 }
 
-func createConfigsTable(ctx context.Context, db *sql.DB) error {
+func createConfigsTable(ctx context.Context, db *sql.DB) {
 	_, err := db.ExecContext(ctx,
 		`CREATE TABLE IF NOT EXISTS configs (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -121,10 +122,9 @@ func createConfigsTable(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		log.Fatal(err)
 	}
-	return err
 }
 
-func createRunsTable(ctx context.Context, db *sql.DB) error {
+func createRunsTable(ctx context.Context, db *sql.DB) {
 	_, err := db.ExecContext(ctx,
 		`CREATE TABLE IF NOT EXISTS runs (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -138,10 +138,9 @@ func createRunsTable(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		log.Fatal(err)
 	}
-	return err
 }
 
-func createTicksTable(ctx context.Context, db *sql.DB) error {
+func createTicksTable(ctx context.Context, db *sql.DB) {
 	_, err := db.ExecContext(ctx,
 		`CREATE TABLE IF NOT EXISTS ticks (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -156,14 +155,12 @@ func createTicksTable(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		log.Fatal(err)
 	}
-	return err
 }
 
-func insertTicks(ctx context.Context, db *sql.DB, runID uint32, ticks *[]Tick) error {
+func insertTicks(ctx context.Context, db *sql.DB, runID uint32, ticks *[]Tick) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		log.Fatal(err)
-		return err
 	}
 	for _, t := range *ticks {
 		_, execErr := tx.Exec(
@@ -173,17 +170,14 @@ func insertTicks(ctx context.Context, db *sql.DB, runID uint32, ticks *[]Tick) e
 		if execErr != nil {
 			_ = tx.Rollback()
 			log.Fatal(execErr)
-			return execErr
 		}
 	}
 	if err := tx.Commit(); err != nil {
 		log.Fatal(err)
-		return err
 	}
-	return nil
 }
 
-func createSavesTable(ctx context.Context, db *sql.DB) error {
+func createSavesTable(ctx context.Context, db *sql.DB) {
 	_, err := db.ExecContext(ctx,
 		`CREATE TABLE IF NOT EXISTS saves (
 			name TEXT PRIMARY KEY,
@@ -197,7 +191,17 @@ func createSavesTable(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		log.Fatal(err)
 	}
-	return err
+}
+
+func Save(ctx context.Context, db *sql.DB, runID uint32, u *Universe,
+	saveCmd *flag.FlagSet, saveName *string) {
+	if saveCmd != nil {
+		saveUniverse(ctx, db, runID, u, saveName)
+	}
+}
+
+func saveUniverse(ctx context.Context, db *sql.DB, runID uint32, u *Universe, saveNmae *string) {
+
 }
 
 func main() {
@@ -263,20 +267,13 @@ func main() {
 	}
 	log.Println(status)
 
-	err = createConfigsTable(ctx, db)
-	if err != nil {
-		return
-	}
+	createConfigsTable(ctx, db)
+	createRunsTable(ctx, db)
+	createTicksTable(ctx, db)
+	createSavesTable(ctx, db)
 
-	err = createRunsTable(ctx, db)
-	if err != nil {
-		return
-	}
-
-	err = createTicksTable(ctx, db)
-	if err != nil {
-		return
-	}
+	saveCmd := flag.NewFlagSet("save", flag.ExitOnError)
+	saveName := saveCmd.String("name", "", "name")
 
 	var gameID int64
 	err = db.QueryRowContext(
@@ -318,8 +315,16 @@ func main() {
 			fmt.Printf("Game over after %d ticks\n", ticks)
 
 			fmt.Printf("%d ticks\n", len(cnts))
-			if execErr := insertTicks(ctx, db, runID, &cnts); execErr != nil {
-				return
+			insertTicks(ctx, db, runID, &cnts)
+
+			if len(os.Args) > 2 {
+				switch os.Args[1] {
+				case "save":
+					saveCmd.Parse(os.Args[2:])
+					Save(ctx, db, runID, &u, saveCmd, saveName)
+				default:
+					break
+				}
 			}
 			return
 		case interrupt := <-c:
@@ -327,8 +332,16 @@ func main() {
 			fmt.Printf("Game over after %d ticks\n", ticks)
 
 			fmt.Printf("%d ticks\n", len(cnts))
-			if execErr := insertTicks(ctx, db, runID, &cnts); execErr != nil {
-				return
+			insertTicks(ctx, db, runID, &cnts)
+
+			if len(os.Args) > 2 {
+				switch os.Args[1] {
+				case "save":
+					saveCmd.Parse(os.Args[2:])
+					Save(ctx, db, runID, &u, saveCmd, saveName)
+				default:
+					break
+				}
 			}
 			return
 		case <-ticker.C:

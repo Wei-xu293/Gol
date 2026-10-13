@@ -37,4 +37,4 @@ Rules are encoded in an 18-bit integer where bit positions correspond to neighbo
 
 - [x] Graceful `Ctrl+C` shutdown via `os/signal` to restore terminal state
 - [ ] CLI flags (`flag` package) for grid dimensions, tick speed, and rule masks
-    * [ ] Add CLI flags: `-save <name>`, `-load <name>`.
+- [ ] Add CLI commands: `save <name>`, `load <name>`.
