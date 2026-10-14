@@ -162,16 +162,23 @@ func insertTicks(ctx context.Context, db *sql.DB, runID uint32, ticks *[]Tick) {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	stmt, errPrep := tx.Prepare(`INSERT INTO ticks (run_id, frame, live_count, hash)
+			VALUES (?, ?, ?, ?)`)
+	if errPrep != nil {
+		log.Fatal(errPrep)
+	}
+	defer stmt.Close()
+
 	for _, t := range *ticks {
-		_, execErr := tx.Exec(
-			`INSERT INTO ticks (run_id, frame, live_count, hash)
-			VALUES (?, ?, ?, ?)`,
+		_, execErr := stmt.Exec(
 			runID, t.Frame, t.LiveCount, t.Hash)
 		if execErr != nil {
 			_ = tx.Rollback()
 			log.Fatal(execErr)
 		}
 	}
+
 	if err := tx.Commit(); err != nil {
 		log.Fatal(err)
 	}
@@ -194,13 +201,31 @@ func createSavesTable(ctx context.Context, db *sql.DB) {
 }
 
 func Save(ctx context.Context, db *sql.DB, runID uint32, u *Universe,
-	saveCmd *flag.FlagSet, saveName *string) {
+	saveCmd *flag.FlagSet, saveName *string, frameTick int) {
 	if saveCmd != nil {
-		saveUniverse(ctx, db, runID, u, saveName)
+		saveUniverse(ctx, db, runID, u, *saveName, frameTick)
 	}
 }
 
-func saveUniverse(ctx context.Context, db *sql.DB, runID uint32, u *Universe, saveNmae *string) {
+func saveUniverse(ctx context.Context, db *sql.DB, runID uint32,
+	u *Universe, saveName string, frameTick int) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+	result, err := conn.ExecContext(ctx,
+		`INSERT INTO saves (name, run_id, frame, current) VALUES (?, ?, ?, ?)`,
+		saveName, runID, frameTick, u.Current)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println(id)
 
 }
 
@@ -274,6 +299,11 @@ func main() {
 
 	saveCmd := flag.NewFlagSet("save", flag.ExitOnError)
 	saveName := saveCmd.String("name", "", "name")
+	flag.Parse()
+	log.Println(saveCmd)
+	if saveName != nil {
+		log.Println(*saveName)
+	}
 
 	var gameID int64
 	err = db.QueryRowContext(
@@ -321,7 +351,7 @@ func main() {
 				switch os.Args[1] {
 				case "save":
 					saveCmd.Parse(os.Args[2:])
-					Save(ctx, db, runID, &u, saveCmd, saveName)
+					Save(ctx, db, runID, &u, saveCmd, saveName, ticks)
 				default:
 					break
 				}
@@ -338,7 +368,7 @@ func main() {
 				switch os.Args[1] {
 				case "save":
 					saveCmd.Parse(os.Args[2:])
-					Save(ctx, db, runID, &u, saveCmd, saveName)
+					Save(ctx, db, runID, &u, saveCmd, saveName, ticks)
 				default:
 					break
 				}
