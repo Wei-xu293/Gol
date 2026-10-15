@@ -148,7 +148,7 @@ func createTicksTable(ctx context.Context, db *sql.DB) {
 			live_count INTEGER,
 			hash INTEGER,
 
-			PRIMARY KEY (run_id, frame, hash),
+			PRIMARY KEY (run_id, frame),
 			FOREIGN KEY (run_id) REFERENCES runs(id)
 		) WITHOUT ROWID`,
 	)
@@ -157,31 +157,28 @@ func createTicksTable(ctx context.Context, db *sql.DB) {
 	}
 }
 
-func insertTicks(ctx context.Context, db *sql.DB, runID uint32, ticks *[]Tick) {
+func insertTicks(ctx context.Context, db *sql.DB, runID uint32, ticks []Tick) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-
+	defer tx.Rollback()
 	stmt, errPrep := tx.Prepare(`INSERT INTO ticks (run_id, frame, live_count, hash)
 			VALUES (?, ?, ?, ?)`)
 	if errPrep != nil {
-		log.Fatal(errPrep)
+		return errPrep
 	}
 	defer stmt.Close()
 
-	for _, t := range *ticks {
-		_, execErr := stmt.Exec(
-			runID, t.Frame, t.LiveCount, t.Hash)
-		if execErr != nil {
-			_ = tx.Rollback()
-			log.Fatal(execErr)
+	for _, t := range ticks {
+		if _, execErr := stmt.Exec(runID, t.Frame, t.LiveCount, t.Hash); execErr != nil {
+			return execErr
 		}
 	}
-
 	if err := tx.Commit(); err != nil {
-		log.Fatal(err)
+		return err
 	}
+	return nil
 }
 
 func createSavesTable(ctx context.Context, db *sql.DB) {
@@ -209,24 +206,17 @@ func Save(ctx context.Context, db *sql.DB, runID uint32, u *Universe,
 
 func saveUniverse(ctx context.Context, db *sql.DB, runID uint32,
 	u *Universe, saveName string, frameTick int) {
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer conn.Close()
-	result, err := conn.ExecContext(ctx,
+	result, err := db.ExecContext(ctx,
 		`INSERT INTO saves (name, run_id, frame, current) VALUES (?, ?, ?, ?)`,
 		saveName, runID, frameTick, u.Current)
 
 	if err != nil {
 		log.Fatal(err)
 	}
-	id, err := result.LastInsertId()
-	if err != nil {
-		log.Fatal(err)
+	rows, err := result.RowsAffected()
+	if err == nil && rows == 1 {
+		log.Printf("Successfully saved a %s", saveName)
 	}
-	log.Println(id)
-
 }
 
 func main() {
@@ -345,7 +335,10 @@ func main() {
 			fmt.Printf("Game over after %d ticks\n", ticks)
 
 			fmt.Printf("%d ticks\n", len(cnts))
-			insertTicks(ctx, db, runID, &cnts)
+			err := insertTicks(ctx, db, runID, cnts)
+			if err != nil {
+				fmt.Printf("Failed to insert %d ticks", ticks)
+			}
 
 			if len(os.Args) > 2 {
 				switch os.Args[1] {
@@ -362,7 +355,10 @@ func main() {
 			fmt.Printf("Game over after %d ticks\n", ticks)
 
 			fmt.Printf("%d ticks\n", len(cnts))
-			insertTicks(ctx, db, runID, &cnts)
+			err := insertTicks(ctx, db, runID, cnts)
+			if err != nil {
+				fmt.Printf("Failed to insert %d ticks", ticks)
+			}
 
 			if len(os.Args) > 2 {
 				switch os.Args[1] {
