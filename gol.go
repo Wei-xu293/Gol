@@ -92,8 +92,8 @@ func (u *Universe) CurrentFrame(first bool) error {
 
 func (u *Universe) countLiveCells() {
 	u.liveCount = 0
-	for i := range u.Current {
-		u.liveCount += i
+	for _, val := range u.Current {
+		u.liveCount += int(val)
 	}
 }
 
@@ -143,14 +143,14 @@ func createRunsTable(ctx context.Context, db *sql.DB) {
 func createTicksTable(ctx context.Context, db *sql.DB) {
 	_, err := db.ExecContext(ctx,
 		`CREATE TABLE IF NOT EXISTS ticks (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			run_id INTEGER,
 			frame INTEGER,
 			live_count INTEGER,
 			hash INTEGER,
 
+			PRIMARY KEY (run_id, frame, hash),
 			FOREIGN KEY (run_id) REFERENCES runs(id)
-		)`,
+		) WITHOUT ROWID`,
 	)
 	if err != nil {
 		log.Fatal(err)
