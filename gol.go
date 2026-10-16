@@ -219,7 +219,7 @@ func saveUniverse(ctx context.Context, db *sql.DB, runID uint32,
 	}
 }
 
-func main() {
+func initGrid() Universe {
 	const (
 		width  = 15
 		height = 21
@@ -255,7 +255,37 @@ func main() {
 		Next:    make([]uint8, width*height),
 		Rule:    0x1808,
 	}
+	return u
+}
+
+func loadUniverse(loadName string) {
+
+}
+
+func main() {
+	u := initGrid()
 	u.countLiveCells()
+
+	saveCmd := flag.NewFlagSet("save", flag.ExitOnError)
+	saveName := saveCmd.String("name", "", "name")
+
+	loadCmd := flag.NewFlagSet("load", flag.ExitOnError)
+	loadName := loadCmd.String("name", "", "name")
+	var enableSave bool
+	loadCmd.BoolVar(&enableSave, "save-after", false, "save after load")
+	loadCmd.BoolVar(&enableSave, "sa", false, "shorthand for save-after")
+	flag.Parse()
+
+	if len(os.Args) > 2 {
+		switch os.Args[1] {
+		case "load":
+			loadCmd.Parse(os.Args[2:])
+			loadUniverse(*loadName)
+		default:
+			break
+		}
+	}
+
 	fmt.Print("\033[?25l")       // hide cursor
 	defer fmt.Print("\033[?25h") // show cursor when done
 	ticks := 0
@@ -286,14 +316,6 @@ func main() {
 	createRunsTable(ctx, db)
 	createTicksTable(ctx, db)
 	createSavesTable(ctx, db)
-
-	saveCmd := flag.NewFlagSet("save", flag.ExitOnError)
-	saveName := saveCmd.String("name", "", "name")
-	flag.Parse()
-	log.Println(saveCmd)
-	if saveName != nil {
-		log.Println(*saveName)
-	}
 
 	var gameID int64
 	err = db.QueryRowContext(
