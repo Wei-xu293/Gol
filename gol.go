@@ -258,8 +258,31 @@ func initGrid() Universe {
 	return u
 }
 
-func loadUniverse(loadName string) {
-
+func loadUniverse(loadName string, db *sql.DB, ctx context.Context) (Universe, int, error) {
+	u := Universe{}
+	var runID, frame int
+	err := db.QueryRowContext(ctx,
+		`SELECT run_id, frame,current FROM saves WHERE name = ?`,
+		loadName).Scan(&runID, &frame, &u.Current)
+	if err != nil {
+		return u, frame, err
+	}
+	var configID int
+	err = db.QueryRowContext(ctx,
+		`SELECT config_id FROM runs WHERE id = ?`, runID).Scan(&configID)
+	if err != nil {
+		return u, frame, err
+	}
+	var width, height, rule uint32
+	err = db.QueryRowContext(ctx,
+		`SELECT width, height, rule FROM configs WHERE id = ?`,
+		configID).Scan(&width, &height, &rule)
+	if err != nil {
+		return u, frame, err
+	}
+	u.Width, u.Height, u.Rule = width, height, rule
+	u.Next = make([]uint8, width*height)
+	return u, frame, err
 }
 
 func main() {
@@ -275,27 +298,6 @@ func main() {
 	loadCmd.BoolVar(&enableSave, "save-after", false, "save after load")
 	loadCmd.BoolVar(&enableSave, "sa", false, "shorthand for save-after")
 	flag.Parse()
-
-	if len(os.Args) > 2 {
-		switch os.Args[1] {
-		case "load":
-			loadCmd.Parse(os.Args[2:])
-			loadUniverse(*loadName)
-		default:
-			break
-		}
-	}
-
-	fmt.Print("\033[?25l")       // hide cursor
-	defer fmt.Print("\033[?25h") // show cursor when done
-	ticks := 0
-	ticker := time.NewTicker(67 * time.Millisecond)
-	defer ticker.Stop()
-
-	timeout := time.After(30 * time.Second)
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
 
 	ctx := context.Background()
 
@@ -316,6 +318,34 @@ func main() {
 	createRunsTable(ctx, db)
 	createTicksTable(ctx, db)
 	createSavesTable(ctx, db)
+
+	fmt.Print("\033[?25l")       // hide cursor
+	defer fmt.Print("\033[?25h") // show cursor when done
+	ticks := 0
+
+	if len(os.Args) > 2 {
+		switch os.Args[1] {
+		case "load":
+			loadCmd.Parse(os.Args[2:])
+			univ, frame, err := loadUniverse(*loadName, db, ctx)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			ticks += frame
+			u = univ
+		default:
+			break
+		}
+	}
+
+	ticker := time.NewTicker(67 * time.Millisecond)
+	defer ticker.Stop()
+
+	timeout := time.After(30 * time.Second)
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
 
 	var gameID int64
 	err = db.QueryRowContext(
@@ -339,13 +369,16 @@ func main() {
 		log.Fatal(err)
 		return
 	}
-
 	fmt.Println("Game:", gameID)
 
 	var runID uint32
 	err = db.QueryRowContext(ctx,
 		`INSERT INTO runs (config_id, start_time) VALUES (?, ?) RETURNING ID`,
 		gameID, time.Now()).Scan(&runID)
+	if err != nil {
+		log.Print(err)
+		return
+	}
 
 	cnts := make([]Tick, 0)
 
@@ -367,6 +400,10 @@ func main() {
 				case "save":
 					saveCmd.Parse(os.Args[2:])
 					Save(ctx, db, runID, &u, saveCmd, saveName, ticks)
+				case "load":
+					if enableSave { // update saved row
+						Save(ctx, db, runID, &u, loadCmd, loadName, ticks)
+					}
 				default:
 					break
 				}
@@ -387,6 +424,10 @@ func main() {
 				case "save":
 					saveCmd.Parse(os.Args[2:])
 					Save(ctx, db, runID, &u, saveCmd, saveName, ticks)
+				case "load":
+					if enableSave {
+						Save(ctx, db, runID, &u, loadCmd, loadName, ticks)
+					}
 				default:
 					break
 				}
