@@ -287,7 +287,29 @@ func loadUniverse(loadName string, db *sql.DB, ctx context.Context) (Universe, i
 }
 
 func List(ctx context.Context, db *sql.DB) {
-	fmt.Printf("%-10s %5s %5s\n", "Name", "Run ID", "Frame")
+	fmt.Printf("%-10s %8s %8s\n", "Name", "Run ID", "Frame")
+	rows, err := db.QueryContext(ctx, "SELECT name, run_id, frame FROM saves;")
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	var (
+		name  string
+		runID int
+		frame int
+	)
+	defer rows.Close()
+	for rows.Next() {
+		err := rows.Scan(&name, &runID, &frame)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+		fmt.Printf("%-10s %8d %8d\n", name, runID, frame)
+	}
+	if err = rows.Err(); err != nil {
+		log.Println(err)
+	}
 }
 
 func main() {
@@ -346,7 +368,7 @@ func main() {
 			u = univ
 		case "list":
 			List(ctx, db)
-			os.Exit(0)
+			return
 		default:
 			break
 		}
