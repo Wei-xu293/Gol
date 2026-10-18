@@ -207,7 +207,8 @@ func Save(ctx context.Context, db *sql.DB, runID uint32, u *Universe,
 func saveUniverse(ctx context.Context, db *sql.DB, runID uint32,
 	u *Universe, saveName string, frameTick int) {
 	result, err := db.ExecContext(ctx,
-		`INSERT INTO saves (name, run_id, frame, current) VALUES (?, ?, ?, ?)`,
+		`INSERT INTO saves (name, run_id, frame, current) VALUES (?, ?, ?, ?)
+		ON CONFLICT (name) DO UPDATE SET frame = excluded.frame;`,
 		saveName, runID, frameTick, u.Current)
 
 	if err != nil {
@@ -323,7 +324,7 @@ func main() {
 	defer fmt.Print("\033[?25h") // show cursor when done
 	ticks := 0
 
-	if len(os.Args) > 2 {
+	if len(os.Args) >= 2 {
 		switch os.Args[1] {
 		case "load":
 			loadCmd.Parse(os.Args[2:])
@@ -331,6 +332,10 @@ func main() {
 			if err != nil {
 				log.Println(err)
 				return
+			}
+			if *loadName == "" {
+				fmt.Println("Name not provided")
+				break
 			}
 			ticks += frame
 			u = univ
@@ -347,34 +352,34 @@ func main() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 
-	var gameID int64
+	var configID int64
 	err = db.QueryRowContext(
 		ctx,
-		`INSERT INTO configs (width, height, rule, initial_hash) 
-		VALUES (?, ?, ?, ?) 
+		`INSERT INTO configs (width, height, rule, initial_hash)
+		VALUES (?, ?, ?, ?)
 		ON CONFLICT (rule, initial_hash) DO NOTHING
 		RETURNING id`,
 		u.Width,
 		u.Height,
 		u.Rule,
 		u.CurrentHash(),
-	).Scan(&gameID)
+	).Scan(&configID)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		err = db.QueryRowContext(ctx,
 			`SELECT id FROM configs WHERE rule = ? AND initial_hash = ?`,
-			u.Rule, u.CurrentHash()).Scan(&gameID)
+			u.Rule, u.CurrentHash()).Scan(&configID)
 	}
 	if err != nil {
 		log.Fatal(err)
 		return
 	}
-	fmt.Println("Game:", gameID)
+	fmt.Println("Game config:", configID)
 
 	var runID uint32
 	err = db.QueryRowContext(ctx,
 		`INSERT INTO runs (config_id, start_time) VALUES (?, ?) RETURNING ID`,
-		gameID, time.Now()).Scan(&runID)
+		configID, time.Now()).Scan(&runID)
 	if err != nil {
 		log.Print(err)
 		return
@@ -389,10 +394,11 @@ func main() {
 			fmt.Println("Done!")
 			fmt.Printf("Game over after %d ticks\n", ticks)
 
-			fmt.Printf("%d ticks\n", len(cnts))
+			fmt.Printf("%d new ticks\n", len(cnts))
 			err := insertTicks(ctx, db, runID, cnts)
 			if err != nil {
 				fmt.Printf("Failed to insert %d ticks", ticks)
+				return
 			}
 
 			if len(os.Args) > 2 {
@@ -401,7 +407,7 @@ func main() {
 					saveCmd.Parse(os.Args[2:])
 					Save(ctx, db, runID, &u, saveCmd, saveName, ticks)
 				case "load":
-					if enableSave { // update saved row
+					if enableSave {
 						Save(ctx, db, runID, &u, loadCmd, loadName, ticks)
 					}
 				default:
@@ -413,10 +419,11 @@ func main() {
 			fmt.Println("Got signal:", interrupt)
 			fmt.Printf("Game over after %d ticks\n", ticks)
 
-			fmt.Printf("%d ticks\n", len(cnts))
+			fmt.Printf("%d new ticks\n", len(cnts))
 			err := insertTicks(ctx, db, runID, cnts)
 			if err != nil {
 				fmt.Printf("Failed to insert %d ticks", ticks)
+				return
 			}
 
 			if len(os.Args) > 2 {
