@@ -1,4 +1,4 @@
-module github.com/Wei-xu293/heatgo
+module github.com/Wei-xu293/gol
 
 go 1.27.1
 

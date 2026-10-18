@@ -286,6 +286,10 @@ func loadUniverse(loadName string, db *sql.DB, ctx context.Context) (Universe, i
 	return u, frame, err
 }
 
+func List(ctx context.Context, db *sql.DB) {
+	fmt.Printf("%-10s %5s %5s\n", "Name", "Run ID", "Frame")
+}
+
 func main() {
 	u := initGrid()
 	u.countLiveCells()
@@ -334,11 +338,15 @@ func main() {
 				return
 			}
 			if *loadName == "" {
-				fmt.Println("Name not provided")
+				fmt.Println("Error: <name> not provided")
+				loadCmd.PrintDefaults()
 				break
 			}
 			ticks += frame
 			u = univ
+		case "list":
+			List(ctx, db)
+			os.Exit(0)
 		default:
 			break
 		}
