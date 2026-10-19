@@ -312,18 +312,35 @@ func List(ctx context.Context, db *sql.DB) {
 	}
 }
 
+func DeleteSaveByName(ctx context.Context, db *sql.DB, name string) error {
+	res, err := db.ExecContext(ctx, "DELETE FROM saves WHERE name = ?", name)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	log.Printf("Rows affected %d\n", rows)
+	return nil
+}
+
 func main() {
 	u := initGrid()
 	u.countLiveCells()
 
 	saveCmd := flag.NewFlagSet("save", flag.ExitOnError)
-	saveName := saveCmd.String("name", "", "name")
+	saveName := saveCmd.String("name", "", "name of the save")
 
 	loadCmd := flag.NewFlagSet("load", flag.ExitOnError)
-	loadName := loadCmd.String("name", "", "name")
+	loadName := loadCmd.String("name", "", "name of the save to load")
 	var enableSave bool
 	loadCmd.BoolVar(&enableSave, "save-after", false, "save after load")
 	loadCmd.BoolVar(&enableSave, "sa", false, "shorthand for save-after")
+
+	deleteCmd := flag.NewFlagSet("delete", flag.ExitOnError)
+	deleteSavedName := deleteCmd.String("name", "", "name of the save to delete")
+
 	flag.Parse()
 
 	ctx := context.Background()
@@ -354,20 +371,34 @@ func main() {
 		switch os.Args[1] {
 		case "load":
 			loadCmd.Parse(os.Args[2:])
+			if *loadName == "" {
+				fmt.Println("Error: <name> not provided")
+				loadCmd.PrintDefaults()
+				return
+			}
 			univ, frame, err := loadUniverse(*loadName, db, ctx)
 			if err != nil {
 				log.Println(err)
 				return
 			}
-			if *loadName == "" {
-				fmt.Println("Error: <name> not provided")
-				loadCmd.PrintDefaults()
-				break
-			}
 			ticks += frame
 			u = univ
 		case "list":
 			List(ctx, db)
+			return
+		case "stats":
+			return
+		case "delete":
+			deleteCmd.Parse(os.Args[2:])
+			if *deleteSavedName == "" {
+				fmt.Println("Error: <name> not provided")
+				deleteCmd.PrintDefaults()
+				return
+			}
+			err := DeleteSaveByName(ctx, db, *deleteSavedName)
+			if err != nil {
+				log.Println(err)
+			}
 			return
 		default:
 			break
