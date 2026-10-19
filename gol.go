@@ -328,7 +328,7 @@ func DeleteSaveByName(ctx context.Context, db *sql.DB, name string) error {
 func Stats(ctx context.Context, db *sql.DB) {
 	err := mostGrowthDieOff(ctx, db)
 	if err != nil {
-		log.Print(err)
+		log.Println(err)
 		return
 	}
 }
