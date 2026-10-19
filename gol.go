@@ -325,6 +325,48 @@ func DeleteSaveByName(ctx context.Context, db *sql.DB, name string) error {
 	return nil
 }
 
+func Stats(ctx context.Context, db *sql.DB) {
+	err := mostGrowthDieOff(ctx, db)
+	if err != nil {
+		log.Print(err)
+		return
+	}
+}
+
+func mostGrowthDieOff(ctx context.Context, db *sql.DB) error {
+	fmt.Println("Most growth and die-off per run")
+	fmt.Printf("%-5s %7s %7s\n", "Run ID", "Growth", "Die-off")
+	rows, err := db.QueryContext(ctx,
+		`WITH diff AS (
+			SELECT run_id, live_count - lag(live_count) OVER win AS growth
+			FROM ticks
+			WINDOW win AS (PARTITION BY run_id ORDER BY frame)
+		)
+		SELECT diff.run_id, max(diff.growth) AS GROWTH, min(diff.growth) AS DIE_OFF
+		FROM diff
+		GROUP BY diff.run_id;`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var (
+		runID  int
+		growth int
+		dieOff int
+	)
+	for rows.Next() {
+		err := rows.Scan(&runID, &growth, &dieOff)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("%-5d %7d %7d\n", runID, growth, dieOff)
+	}
+	if err = rows.Err(); err != nil {
+		log.Println(err)
+	}
+	return err
+}
+
 func main() {
 	u := initGrid()
 	u.countLiveCells()
@@ -387,6 +429,7 @@ func main() {
 			List(ctx, db)
 			return
 		case "stats":
+			Stats(ctx, db)
 			return
 		case "delete":
 			deleteCmd.Parse(os.Args[2:])
