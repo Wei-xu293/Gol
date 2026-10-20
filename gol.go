@@ -331,6 +331,34 @@ func Stats(ctx context.Context, db *sql.DB) {
 		log.Println(err)
 		return
 	}
+	fmt.Println()
+	err = ticksData(ctx, db)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+}
+
+func ticksData(ctx context.Context, db *sql.DB) error {
+	var (
+		total_frames int
+		max_alive    int
+		avg_alive    float32
+	)
+	err := db.QueryRowContext(ctx,
+		`select
+    count(*) as total_frames,
+		coalesce(max(live_count), 0) as max_alive,
+		coalesce(round(avg(live_count), 1), 0.0) as avg_alive
+	from ticks`).Scan(&total_frames, &max_alive, &avg_alive)
+
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("%-10s %10s %10s\n", "Total frames", "Max alive", "Avg alive")
+	fmt.Printf("%-10d %10d %10.2f\n", total_frames, max_alive, avg_alive)
+	return err
 }
 
 func mostGrowthDieOff(ctx context.Context, db *sql.DB) error {
