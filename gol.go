@@ -33,6 +33,14 @@ type Tick struct {
 	Hash      uint32
 }
 
+type Config struct {
+	id           int64
+	width        uint32
+	height       uint32
+	rule         uint32
+	initial_hash uint32
+}
+
 var dirs = [8][2]int{
 	{-1, -1}, {-1, 0}, {-1, 1},
 	{0, -1}, {0, 1},
@@ -260,31 +268,32 @@ func initGrid() Universe {
 	return u
 }
 
-func loadUniverse(loadName string, db *sql.DB, ctx context.Context) (Universe, int, error) {
+func loadUniverse(loadName string, db *sql.DB, ctx context.Context) (Universe, Config, int, error) {
 	u := Universe{}
 	var runID, frame int
 	err := db.QueryRowContext(ctx,
 		`SELECT run_id, frame,current FROM saves WHERE name = ?`,
 		loadName).Scan(&runID, &frame, &u.Current)
+	var cfg Config
 	if err != nil {
-		return u, frame, err
+		return u, cfg, frame, err
 	}
-	var configID int
+	var configID int64
 	err = db.QueryRowContext(ctx,
 		`SELECT config_id FROM runs WHERE id = ?`, runID).Scan(&configID)
 	if err != nil {
-		return u, frame, err
+		return u, cfg, frame, err
 	}
-	var width, height, rule uint32
+	cfg.id = configID
 	err = db.QueryRowContext(ctx,
-		`SELECT width, height, rule FROM configs WHERE id = ?`,
-		configID).Scan(&width, &height, &rule)
+		`SELECT width, height, rule, initial_hash FROM configs WHERE id = ?`,
+		cfg.id).Scan(&cfg.width, &cfg.height, &cfg.rule, &cfg.initial_hash)
 	if err != nil {
-		return u, frame, err
+		return u, cfg, frame, err
 	}
-	u.Width, u.Height, u.Rule = width, height, rule
-	u.Next = make([]uint8, width*height)
-	return u, frame, err
+	u.Width, u.Height, u.Rule = cfg.width, cfg.height, cfg.rule
+	u.Next = make([]uint8, u.Width*u.Height)
+	return u, cfg, frame, err
 }
 
 func List(ctx context.Context, db *sql.DB) {
@@ -447,6 +456,9 @@ func main() {
 	defer fmt.Print("\033[?25h") // show cursor when done
 	ticks := 0
 
+	loading := false
+	var config Config
+
 	if len(os.Args) >= 2 {
 		switch os.Args[1] {
 		case "load":
@@ -456,13 +468,15 @@ func main() {
 				loadCmd.PrintDefaults()
 				return
 			}
-			univ, frame, err := loadUniverse(*loadName, db, ctx)
+			univ, cfg, frame, err := loadUniverse(*loadName, db, ctx)
 			if err != nil {
 				log.Println(err)
 				return
 			}
 			ticks += frame
 			u = univ
+			config = cfg
+			loading = true
 		case "list":
 			List(ctx, db)
 			return
@@ -497,26 +511,30 @@ func main() {
 	signal.Notify(c, os.Interrupt)
 
 	var configID int64
-	err = db.QueryRowContext(
-		ctx,
-		`INSERT INTO configs (width, height, rule, initial_hash)
-		VALUES (?, ?, ?, ?)
-		ON CONFLICT (rule, initial_hash) DO NOTHING
-		RETURNING id`,
-		u.Width,
-		u.Height,
-		u.Rule,
-		u.CurrentHash(),
-	).Scan(&configID)
+	if !loading {
+		err = db.QueryRowContext(
+			ctx,
+			`INSERT INTO configs (width, height, rule, initial_hash)
+			VALUES (?, ?, ?, ?)
+			ON CONFLICT (rule, initial_hash) DO NOTHING
+			RETURNING id`,
+			u.Width,
+			u.Height,
+			u.Rule,
+			u.CurrentHash(),
+		).Scan(&configID)
 
-	if errors.Is(err, sql.ErrNoRows) {
-		err = db.QueryRowContext(ctx,
-			`SELECT id FROM configs WHERE rule = ? AND initial_hash = ?`,
-			u.Rule, u.CurrentHash()).Scan(&configID)
-	}
-	if err != nil {
-		log.Fatal(err)
-		return
+		if errors.Is(err, sql.ErrNoRows) {
+			err = db.QueryRowContext(ctx,
+				`SELECT id FROM configs WHERE rule = ? AND initial_hash = ?`,
+				u.Rule, u.CurrentHash()).Scan(&configID)
+		}
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+	} else {
+		configID = config.id
 	}
 	fmt.Println("Game config:", configID)
 
