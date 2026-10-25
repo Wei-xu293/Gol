@@ -270,24 +270,15 @@ func initGrid() Universe {
 
 func loadUniverse(loadName string, db *sql.DB, ctx context.Context) (Universe, Config, int, error) {
 	u := Universe{}
-	var runID, frame int
+	var (
+		cfg   Config
+		frame int
+	)
 	err := db.QueryRowContext(ctx,
-		`SELECT run_id, frame,current FROM saves WHERE name = ?`,
-		loadName).Scan(&runID, &frame, &u.Current)
-	var cfg Config
-	if err != nil {
-		return u, cfg, frame, err
-	}
-	var configID int64
-	err = db.QueryRowContext(ctx,
-		`SELECT config_id FROM runs WHERE id = ?`, runID).Scan(&configID)
-	if err != nil {
-		return u, cfg, frame, err
-	}
-	cfg.id = configID
-	err = db.QueryRowContext(ctx,
-		`SELECT width, height, rule, initial_hash FROM configs WHERE id = ?`,
-		cfg.id).Scan(&cfg.width, &cfg.height, &cfg.rule, &cfg.initial_hash)
+		`SELECT s.frame, s.current, c.id, c.width, c.height, c.rule, c.initial_hash
+		FROM saves s JOIN runs r ON s.run_id = r.id JOIN configs c ON r.config_id = c.id
+		WHERE s.name = ?;`,
+		loadName).Scan(&frame, &u.Current, &cfg.id, &cfg.width, &cfg.height, &cfg.rule, &cfg.initial_hash)
 	if err != nil {
 		return u, cfg, frame, err
 	}
@@ -380,7 +371,7 @@ func mostGrowthDieOff(ctx context.Context, db *sql.DB) error {
 			FROM ticks
 			WINDOW win AS (PARTITION BY run_id ORDER BY frame)
 		)
-		SELECT diff.run_id, max(diff.growth) AS GROWTH, min(diff.growth) AS DIE_OFF
+		SELECT diff.run_id, coalesce(max(diff.growth),0) AS GROWTH, coalesce(min(diff.growth),0) AS DIE_OFF
 		FROM diff
 		GROUP BY diff.run_id;`)
 	if err != nil {
@@ -476,6 +467,8 @@ func main() {
 			u = univ
 			config = cfg
 			loading = true
+		case "save":
+			saveCmd.Parse(os.Args[2:])
 		case "list":
 			List(ctx, db)
 			return
@@ -567,7 +560,6 @@ func main() {
 			if len(os.Args) > 2 {
 				switch os.Args[1] {
 				case "save":
-					saveCmd.Parse(os.Args[2:])
 					Save(ctx, db, runID, &u, saveCmd, saveName, ticks)
 				case "load":
 					if enableSave {
@@ -592,7 +584,6 @@ func main() {
 			if len(os.Args) > 2 {
 				switch os.Args[1] {
 				case "save":
-					saveCmd.Parse(os.Args[2:])
 					Save(ctx, db, runID, &u, saveCmd, saveName, ticks)
 				case "load":
 					if enableSave {
