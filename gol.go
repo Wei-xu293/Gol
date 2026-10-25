@@ -217,7 +217,7 @@ func saveUniverse(ctx context.Context, db *sql.DB, runID uint32,
 	u *Universe, saveName string, frameTick int) {
 	result, err := db.ExecContext(ctx,
 		`INSERT INTO saves (name, run_id, frame, current) VALUES (?, ?, ?, ?)
-		ON CONFLICT (name) DO UPDATE SET frame = excluded.frame;`,
+		ON CONFLICT (name) DO UPDATE SET run_id = excluded.run_id, frame = excluded.frame, current = excluded.current;`,
 		saveName, runID, frameTick, u.Current)
 
 	if err != nil {
@@ -407,7 +407,6 @@ func mostGrowthDieOff(ctx context.Context, db *sql.DB) error {
 
 func main() {
 	u := initGrid()
-	u.countLiveCells()
 
 	saveCmd := flag.NewFlagSet("save", flag.ExitOnError)
 	saveName := saveCmd.String("name", "", "name of the save")
@@ -501,6 +500,8 @@ func main() {
 			break
 		}
 	}
+
+	u.countLiveCells()
 
 	ticker := time.NewTicker(67 * time.Millisecond)
 	defer ticker.Stop()
