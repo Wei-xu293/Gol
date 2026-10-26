@@ -469,6 +469,11 @@ func main() {
 			loading = true
 		case "save":
 			saveCmd.Parse(os.Args[2:])
+			if *saveName == "" {
+				fmt.Println("Error: <name> not provided")
+				saveCmd.PrintDefaults()
+				return
+			}
 		case "list":
 			List(ctx, db)
 			return
