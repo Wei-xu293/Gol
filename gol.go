@@ -166,7 +166,7 @@ func createTicksTable(ctx context.Context, db *sql.DB) {
 	}
 }
 
-func insertTicks(ctx context.Context, db *sql.DB, runID uint32, ticks []Tick) error {
+func insertTicks(ctx context.Context, db *sql.DB, runID int, ticks []Tick) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -206,14 +206,14 @@ func createSavesTable(ctx context.Context, db *sql.DB) {
 	}
 }
 
-func Save(ctx context.Context, db *sql.DB, runID uint32, u *Universe,
+func Save(ctx context.Context, db *sql.DB, runID int, u *Universe,
 	saveCmd *flag.FlagSet, saveName *string, frameTick int) {
 	if saveCmd != nil {
 		saveUniverse(ctx, db, runID, u, *saveName, frameTick)
 	}
 }
 
-func saveUniverse(ctx context.Context, db *sql.DB, runID uint32,
+func saveUniverse(ctx context.Context, db *sql.DB, runID int,
 	u *Universe, saveName string, frameTick int) {
 	result, err := db.ExecContext(ctx,
 		`INSERT INTO saves (name, run_id, frame, current) VALUES (?, ?, ?, ?)
@@ -396,6 +396,24 @@ func mostGrowthDieOff(ctx context.Context, db *sql.DB) error {
 	return err
 }
 
+func UpdateRunById(ctx context.Context, db *sql.DB, runID int, endReason string) error {
+	res, err := db.ExecContext(ctx,
+		`UPDATE runs
+		 SET end_reason = ?
+	  	 WHERE id = ?;`, endReason, runID)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows != 1 {
+		return fmt.Errorf("update run by id: %d rows affected", rows)
+	}
+	return nil
+}
+
 func main() {
 	u := initGrid()
 
@@ -529,7 +547,7 @@ func main() {
 				u.Rule, u.CurrentHash()).Scan(&configID)
 		}
 		if err != nil {
-			log.Fatal(err)
+			log.Println(err)
 			return
 		}
 	} else {
@@ -537,12 +555,12 @@ func main() {
 	}
 	fmt.Println("Game config:", configID)
 
-	var runID uint32
+	var runID int
 	err = db.QueryRowContext(ctx,
 		`INSERT INTO runs (config_id, start_time) VALUES (?, ?) RETURNING ID`,
 		configID, time.Now()).Scan(&runID)
 	if err != nil {
-		log.Print(err)
+		log.Println(err)
 		return
 	}
 
@@ -574,6 +592,10 @@ func main() {
 					break
 				}
 			}
+			err = UpdateRunById(ctx, db, runID, "timeout")
+			if err != nil {
+				fmt.Println(err)
+			}
 			return
 		case interrupt := <-c:
 			fmt.Println("Got signal:", interrupt)
@@ -597,6 +619,10 @@ func main() {
 				default:
 					break
 				}
+			}
+			err = UpdateRunById(ctx, db, runID, "interrupt")
+			if err != nil {
+				fmt.Println(err)
 			}
 			return
 		case <-ticker.C:
