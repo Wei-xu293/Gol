@@ -527,11 +527,7 @@ func main() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 
-	cycle := make(chan bool)
 	seen := make(map[uint32]struct{})
-	seen[u.CurrentHash()] = struct{}{}
-
-	dead := make(chan bool)
 
 	var configID int64
 	if !loading {
@@ -573,81 +569,18 @@ func main() {
 	cnts := make([]Tick, 0)
 
 	first := true
+	var endReason string
+loop:
 	for {
 		select {
 		case <-timeout:
 			fmt.Println("Done!")
-			fmt.Printf("Game over after %d ticks\n", ticks)
-
-			fmt.Printf("%d new ticks\n", len(cnts))
-			err := insertTicks(ctx, db, runID, cnts)
-			if err != nil {
-				fmt.Printf("Failed to insert %d ticks", ticks)
-				return
-			}
-
-			if len(os.Args) > 2 {
-				switch os.Args[1] {
-				case "save":
-					Save(ctx, db, runID, &u, saveCmd, saveName, ticks)
-				case "load":
-					if enableSave {
-						Save(ctx, db, runID, &u, loadCmd, loadName, ticks)
-					}
-				default:
-					break
-				}
-			}
-			err = UpdateRunById(ctx, db, runID, "timeout")
-			if err != nil {
-				fmt.Println(err)
-			}
-			return
+			endReason = "timeout"
+			break loop
 		case interrupt := <-c:
 			fmt.Println("Got signal:", interrupt)
-			fmt.Printf("Game over after %d ticks\n", ticks)
-
-			fmt.Printf("%d new ticks\n", len(cnts))
-			err := insertTicks(ctx, db, runID, cnts)
-			if err != nil {
-				fmt.Printf("Failed to insert %d ticks", ticks)
-				return
-			}
-
-			if len(os.Args) > 2 {
-				switch os.Args[1] {
-				case "save":
-					Save(ctx, db, runID, &u, saveCmd, saveName, ticks)
-				case "load":
-					if enableSave {
-						Save(ctx, db, runID, &u, loadCmd, loadName, ticks)
-					}
-				default:
-					break
-				}
-			}
-			err = UpdateRunById(ctx, db, runID, "interrupt")
-			if err != nil {
-				fmt.Println(err)
-			}
-			return
-		case detected := <-cycle:
-			if detected {
-				fmt.Printf("Cycle detected on frame %d\n", ticks-1) // ntc
-				err = UpdateRunById(ctx, db, runID, "cycle")
-				if err != nil {
-					fmt.Println(err)
-				}
-			}
-			return
-		case extinct := <-dead:
-			if extinct {
-				fmt.Printf("Extinction\n")
-				err = UpdateRunById(ctx, db, runID, "extinction")
-				if err != nil {
-					fmt.Println(err)
-				}
-			}
+			endReason = "interrupt"
+			break loop
 		case <-ticker.C:
 			if !first {
 				u.NextState()
@@ -663,13 +596,42 @@ func main() {
 			first = false
 			ticks++
 			if _, ok := seen[u.CurrentHash()]; ok {
-				cycle <- true
+				fmt.Printf("Cycle detected on frame %d\n", ticks-1)
+				endReason = "cycle"
+				break loop
 			} else {
 				seen[u.CurrentHash()] = struct{}{}
 			}
 			if u.LiveCount() == 0 {
-				dead <- true
+				fmt.Println("Extinction")
+				endReason = "extinction"
+				break loop
 			}
 		}
+	}
+	fmt.Printf("Game over after %d ticks\n", ticks)
+
+	fmt.Printf("%d new ticks\n", len(cnts))
+	err = insertTicks(ctx, db, runID, cnts)
+	if err != nil {
+		fmt.Printf("Failed to insert %d ticks", ticks)
+		return
+	}
+
+	if len(os.Args) > 2 {
+		switch os.Args[1] {
+		case "save":
+			Save(ctx, db, runID, &u, saveCmd, saveName, ticks)
+		case "load":
+			if enableSave {
+				Save(ctx, db, runID, &u, loadCmd, loadName, ticks)
+			}
+		default:
+			break
+		}
+	}
+	err = UpdateRunById(ctx, db, runID, endReason)
+	if err != nil {
+		fmt.Println(err)
 	}
 }
