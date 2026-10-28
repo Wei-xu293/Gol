@@ -431,6 +431,8 @@ func main() {
 
 	bf := flag.Bool("bench", false, "benchmark SQL")
 
+	cycleFlag := flag.Bool("cycle", false, "detect cycle")
+
 	flag.Parse()
 
 	if *bf {
@@ -595,13 +597,17 @@ loop:
 			u.b.Reset()
 			first = false
 			ticks++
-			if _, ok := seen[u.CurrentHash()]; ok {
-				fmt.Printf("Cycle detected on frame %d\n", ticks-1)
-				endReason = "cycle"
-				break loop
-			} else {
-				seen[u.CurrentHash()] = struct{}{}
+
+			if *cycleFlag {
+				if _, ok := seen[u.CurrentHash()]; ok {
+					fmt.Printf("Cycle detected on frame %d\n", ticks-1)
+					endReason = "cycle"
+					break loop
+				} else {
+					seen[u.CurrentHash()] = struct{}{}
+				}
 			}
+
 			if u.LiveCount() == 0 {
 				fmt.Println("Extinction")
 				endReason = "extinction"
