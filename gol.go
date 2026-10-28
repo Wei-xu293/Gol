@@ -531,6 +531,8 @@ func main() {
 	seen := make(map[uint32]struct{})
 	seen[u.CurrentHash()] = struct{}{}
 
+	dead := make(chan bool)
+
 	var configID int64
 	if !loading {
 		err = db.QueryRowContext(
@@ -638,6 +640,14 @@ func main() {
 				}
 			}
 			return
+		case extinct := <-dead:
+			if extinct {
+				fmt.Printf("Extinction\n")
+				err = UpdateRunById(ctx, db, runID, "extinction")
+				if err != nil {
+					fmt.Println(err)
+				}
+			}
 		case <-ticker.C:
 			if !first {
 				u.NextState()
@@ -647,16 +657,19 @@ func main() {
 				uint32(u.LiveCount()),
 				u.CurrentHash(),
 			})
-			if _, ok := seen[u.CurrentHash()]; ok {
-				cycle <- true
-			} else {
-				seen[u.CurrentHash()] = struct{}{}
-			}
 			u.CurrentFrame(first)
 			u.b.WriteTo(os.Stdout)
 			u.b.Reset()
 			first = false
 			ticks++
+			if _, ok := seen[u.CurrentHash()]; ok {
+				cycle <- true
+			} else {
+				seen[u.CurrentHash()] = struct{}{}
+			}
+			if u.LiveCount() == 0 {
+				dead <- true
+			}
 		}
 	}
 }
