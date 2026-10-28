@@ -527,6 +527,10 @@ func main() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 
+	cycle := make(chan bool)
+	seen := make(map[uint32]struct{})
+	seen[u.CurrentHash()] = struct{}{}
+
 	var configID int64
 	if !loading {
 		err = db.QueryRowContext(
@@ -625,6 +629,15 @@ func main() {
 				fmt.Println(err)
 			}
 			return
+		case detected := <-cycle:
+			if detected {
+				fmt.Printf("Cycle detected on frame %d\n", ticks-1) // ntc
+				err = UpdateRunById(ctx, db, runID, "cycle")
+				if err != nil {
+					fmt.Println(err)
+				}
+			}
+			return
 		case <-ticker.C:
 			if !first {
 				u.NextState()
@@ -634,6 +647,11 @@ func main() {
 				uint32(u.LiveCount()),
 				u.CurrentHash(),
 			})
+			if _, ok := seen[u.CurrentHash()]; ok {
+				cycle <- true
+			} else {
+				seen[u.CurrentHash()] = struct{}{}
+			}
 			u.CurrentFrame(first)
 			u.b.WriteTo(os.Stdout)
 			u.b.Reset()
