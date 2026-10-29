@@ -225,7 +225,7 @@ func saveUniverse(ctx context.Context, db *sql.DB, runID int,
 	}
 	rows, err := result.RowsAffected()
 	if err == nil && rows == 1 {
-		log.Printf("Successfully saved a %s", saveName)
+		log.Printf("Successfully saved a run: %s", saveName)
 	}
 }
 
@@ -469,10 +469,13 @@ func main() {
 	loading := false
 	var config Config
 
-	if len(os.Args) >= 2 {
-		switch os.Args[1] {
+	fmt.Printf("raw os.Args   (len %d): %q\n", len(os.Args), os.Args)
+	fmt.Printf("leftover Args (len %d): %q\n", flag.NArg(), flag.Args())
+
+	if flag.NArg() >= 1 {
+		switch flag.Arg(0) {
 		case "load":
-			loadCmd.Parse(os.Args[2:])
+			loadCmd.Parse(flag.Args()[1:])
 			if *loadName == "" {
 				fmt.Println("Error: <name> not provided")
 				loadCmd.PrintDefaults()
@@ -488,7 +491,7 @@ func main() {
 			config = cfg
 			loading = true
 		case "save":
-			saveCmd.Parse(os.Args[2:])
+			saveCmd.Parse(flag.Args()[1:])
 			if *saveName == "" {
 				fmt.Println("Error: <name> not provided")
 				saveCmd.PrintDefaults()
@@ -501,7 +504,7 @@ func main() {
 			Stats(ctx, db)
 			return
 		case "delete":
-			deleteCmd.Parse(os.Args[2:])
+			deleteCmd.Parse(flag.Args()[1:])
 			if *deleteSavedName == "" {
 				fmt.Println("Error: <name> not provided")
 				deleteCmd.PrintDefaults()
@@ -620,22 +623,14 @@ loop:
 	fmt.Printf("%d new ticks\n", len(cnts))
 	err = insertTicks(ctx, db, runID, cnts)
 	if err != nil {
-		fmt.Printf("Failed to insert %d ticks", ticks)
+		fmt.Printf("Failed to insert %d ticks\n", ticks)
 		return
 	}
 
-	if len(os.Args) > 2 {
-		switch os.Args[1] {
-		case "save":
-			Save(ctx, db, runID, &u, saveCmd, saveName, ticks)
-		case "load":
-			if enableSave {
-				Save(ctx, db, runID, &u, loadCmd, loadName, ticks)
-			}
-		default:
-			break
-		}
+	if saveCmd.Parsed() {
+		Save(ctx, db, runID, &u, saveCmd, saveName, ticks)
 	}
+
 	err = UpdateRunById(ctx, db, runID, endReason)
 	if err != nil {
 		fmt.Println(err)
