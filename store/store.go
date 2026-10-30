@@ -76,6 +76,13 @@ func createSavesTable(ctx context.Context, db *sql.DB) {
 	}
 }
 
+func InitDB(ctx context.Context, db *sql.DB) {
+	createConfigsTable(ctx, db)
+	createRunsTable(ctx, db)
+	createSavesTable(ctx, db)
+	createTicksTable(ctx, db)
+}
+
 func InsertTicks(ctx context.Context, db *sql.DB, runID int, ticks []model.Tick) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
