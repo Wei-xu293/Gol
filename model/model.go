@@ -1,6 +1,9 @@
 package model
 
-import "bytes"
+import (
+	"bytes"
+	"hash/fnv"
+)
 
 type Universe struct {
 	Width     uint32
@@ -24,4 +27,10 @@ type Config struct {
 	Height       uint32
 	Rule         uint32
 	Initial_hash uint32
+}
+
+func (u *Universe) CurrentHash() uint32 {
+	h := fnv.New32a()
+	h.Write(u.Current)
+	return h.Sum32()
 }
