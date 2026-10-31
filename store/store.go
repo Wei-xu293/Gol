@@ -275,3 +275,23 @@ func UpdateRunById(ctx context.Context, db *sql.DB, runID int, endReason string)
 	}
 	return nil
 }
+
+// Inserts the initial universe state as a config record and returns the configID,
+// whether it was newly created or already existed.
+func InsertConfig(ctx context.Context, db *sql.DB, u *model.Universe) (int64, error) {
+
+	var configID int64
+	err := db.QueryRowContext(
+		ctx,
+		`INSERT INTO configs (width, height, rule, initial_hash)
+			VALUES (?, ?, ?, ?)
+			ON CONFLICT (rule, initial_hash) DO NOTHING
+			RETURNING id`,
+		u.Width,
+		u.Height,
+		u.Rule,
+		u.CurrentHash(),
+	).Scan(&configID)
+
+	return configID, err
+}
