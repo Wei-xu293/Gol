@@ -101,13 +101,6 @@ func (u *Universe) CurrentFrame(first bool) error {
 	return nil
 }
 
-func (u *Universe) countLiveCells() {
-	u.liveCount = 0
-	for _, val := range u.Current {
-		u.liveCount += int(val)
-	}
-}
-
 func (u *Universe) LiveCount() int {
 	return u.liveCount
 }
@@ -231,7 +224,7 @@ func saveUniverse(ctx context.Context, db *sql.DB, runID int,
 	}
 }
 
-func initGrid() Universe {
+func initGrid() model.Universe {
 	const (
 		width  = 15
 		height = 21
@@ -260,7 +253,7 @@ func initGrid() Universe {
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	}
-	u := Universe{
+	u := model.Universe{
 		Width:   width,
 		Height:  height,
 		Current: initialGrid,
@@ -268,25 +261,6 @@ func initGrid() Universe {
 		Rule:    0x1808,
 	}
 	return u
-}
-
-func loadUniverse(loadName string, db *sql.DB, ctx context.Context) (Universe, Config, int, error) {
-	u := Universe{}
-	var (
-		cfg   Config
-		frame int
-	)
-	err := db.QueryRowContext(ctx,
-		`SELECT s.frame, s.current, c.id, c.width, c.height, c.rule, c.initial_hash
-		FROM saves s JOIN runs r ON s.run_id = r.id JOIN configs c ON r.config_id = c.id
-		WHERE s.name = ?;`,
-		loadName).Scan(&frame, &u.Current, &cfg.id, &cfg.width, &cfg.height, &cfg.rule, &cfg.initial_hash)
-	if err != nil {
-		return u, cfg, frame, err
-	}
-	u.Width, u.Height, u.Rule = cfg.width, cfg.height, cfg.rule
-	u.Next = make([]uint8, u.Width*u.Height)
-	return u, cfg, frame, err
 }
 
 func List(ctx context.Context, db *sql.DB) {
@@ -429,7 +403,7 @@ func main() {
 	ticks := 0
 
 	loading := false
-	var config Config
+	var config model.Config
 
 	fmt.Printf("raw os.Args   (len %d): %q\n", len(os.Args), os.Args)
 	fmt.Printf("leftover Args (len %d): %q\n", flag.NArg(), flag.Args())
@@ -443,7 +417,7 @@ func main() {
 				loadCmd.PrintDefaults()
 				return
 			}
-			univ, cfg, frame, err := loadUniverse(*loadName, db, ctx)
+			univ, cfg, frame, err := store.LoadUniverse(*loadName, db, ctx)
 			if err != nil {
 				log.Println(err)
 				return
@@ -484,7 +458,7 @@ func main() {
 		}
 	}
 
-	u.countLiveCells()
+	u.CountLiveCells()
 
 	ticker := time.NewTicker(67 * time.Millisecond)
 	defer ticker.Stop()
@@ -498,17 +472,7 @@ func main() {
 
 	var configID int64
 	if !loading {
-		err = db.QueryRowContext(
-			ctx,
-			`INSERT INTO configs (width, height, rule, initial_hash)
-			VALUES (?, ?, ?, ?)
-			ON CONFLICT (rule, initial_hash) DO NOTHING
-			RETURNING id`,
-			u.Width,
-			u.Height,
-			u.Rule,
-			u.CurrentHash(),
-		).Scan(&configID)
+		configID, err = store.InsertConfig(ctx, db, &u)
 
 		if errors.Is(err, sql.ErrNoRows) {
 			err = db.QueryRowContext(ctx,
@@ -520,7 +484,7 @@ func main() {
 			return
 		}
 	} else {
-		configID = config.id
+		configID = config.Id
 	}
 	fmt.Println("Game config:", configID)
 
@@ -558,8 +522,8 @@ loop:
 				u.CurrentHash(),
 			})
 			u.CurrentFrame(first)
-			u.b.WriteTo(os.Stdout)
-			u.b.Reset()
+			u.B.WriteTo(os.Stdout)
+			u.B.Reset()
 			first = false
 			ticks++
 
@@ -590,7 +554,7 @@ loop:
 	}
 
 	if saveCmd.Parsed() {
-		Save(ctx, db, runID, &u, saveCmd, saveName, ticks)
+		store.Save(ctx, db, runID, &u, saveCmd, saveName, ticks)
 	}
 
 	err = UpdateRunById(ctx, db, runID, endReason)
