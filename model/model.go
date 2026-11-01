@@ -34,3 +34,15 @@ func (u *Universe) CurrentHash() uint32 {
 	h.Write(u.Current)
 	return h.Sum32()
 }
+
+type TicksInfo struct {
+	TotalFrames int
+	MaxAlive    int
+	AvgAlive    float32
+}
+
+type GrowthDieOff struct {
+	RunID  int
+	Growth int
+	DieOff int
+}

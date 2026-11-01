@@ -6,11 +6,12 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/Wei-xu293/gol/model"
 )
 
-func createConfigsTable(ctx context.Context, db *sql.DB) {
+func createConfigsTable(ctx context.Context, db *sql.DB) error {
 	_, err := db.ExecContext(ctx,
 		`CREATE TABLE IF NOT EXISTS configs (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -22,12 +23,10 @@ func createConfigsTable(ctx context.Context, db *sql.DB) {
 			UNIQUE (rule, initial_hash)
 		)`,
 	)
-	if err != nil {
-		log.Fatal(err)
-	}
+	return err
 }
 
-func createRunsTable(ctx context.Context, db *sql.DB) {
+func createRunsTable(ctx context.Context, db *sql.DB) error {
 	_, err := db.ExecContext(ctx,
 		`CREATE TABLE IF NOT EXISTS runs (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,12 +37,10 @@ func createRunsTable(ctx context.Context, db *sql.DB) {
 			FOREIGN KEY (config_id) REFERENCES configs(id)
 		)`,
 	)
-	if err != nil {
-		log.Fatal(err)
-	}
+	return err
 }
 
-func createTicksTable(ctx context.Context, db *sql.DB) {
+func createTicksTable(ctx context.Context, db *sql.DB) error {
 	_, err := db.ExecContext(ctx,
 		`CREATE TABLE IF NOT EXISTS ticks (
 			run_id INTEGER,
@@ -55,12 +52,10 @@ func createTicksTable(ctx context.Context, db *sql.DB) {
 			FOREIGN KEY (run_id) REFERENCES runs(id)
 		) WITHOUT ROWID`,
 	)
-	if err != nil {
-		log.Fatal(err)
-	}
+	return err
 }
 
-func createSavesTable(ctx context.Context, db *sql.DB) {
+func createSavesTable(ctx context.Context, db *sql.DB) error {
 	_, err := db.ExecContext(ctx,
 		`CREATE TABLE IF NOT EXISTS saves (
 			name TEXT PRIMARY KEY,
@@ -71,16 +66,23 @@ func createSavesTable(ctx context.Context, db *sql.DB) {
 			FOREIGN KEY (run_id) REFERENCES runs(id)
 		)`,
 	)
-	if err != nil {
-		log.Fatal(err)
-	}
+	return err
 }
 
-func InitDB(ctx context.Context, db *sql.DB) {
-	createConfigsTable(ctx, db)
-	createRunsTable(ctx, db)
-	createSavesTable(ctx, db)
-	createTicksTable(ctx, db)
+func InitDB(ctx context.Context, db *sql.DB) error {
+	if err := createConfigsTable(ctx, db); err != nil {
+		return err
+	}
+	if err := createRunsTable(ctx, db); err != nil {
+		return err
+	}
+	if err := createSavesTable(ctx, db); err != nil {
+		return err
+	}
+	if err := createTicksTable(ctx, db); err != nil {
+		return err
+	}
+	return nil
 }
 
 func InsertTicks(ctx context.Context, db *sql.DB, runID int, ticks []model.Tick) error {
@@ -188,45 +190,18 @@ func DeleteSaveByName(ctx context.Context, db *sql.DB, name string) error {
 	return nil
 }
 
-func Stats(ctx context.Context, db *sql.DB) {
-	err := mostGrowthDieOff(ctx, db)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	fmt.Println()
-	err = ticksData(ctx, db)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-}
-
-func ticksData(ctx context.Context, db *sql.DB) error {
-	var (
-		total_frames int
-		max_alive    int
-		avg_alive    float32
-	)
+func TicksData(ctx context.Context, db *sql.DB) (model.TicksInfo, error) {
+	var td model.TicksInfo
 	err := db.QueryRowContext(ctx,
 		`select
     count(*) as total_frames,
 		coalesce(max(live_count), 0) as max_alive,
 		coalesce(round(avg(live_count), 1), 0.0) as avg_alive
-	from ticks`).Scan(&total_frames, &max_alive, &avg_alive)
-
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("%-10s %10s %10s\n", "Total frames", "Max alive", "Avg alive")
-	fmt.Printf("%-10d %10d %10.2f\n", total_frames, max_alive, avg_alive)
-	return err
+	from ticks`).Scan(&td.TotalFrames, &td.MaxAlive, &td.AvgAlive)
+	return td, err
 }
 
-func mostGrowthDieOff(ctx context.Context, db *sql.DB) error {
-	fmt.Println("Most growth and die-off per run")
-	fmt.Printf("%-5s %7s %7s\n", "Run ID", "Growth", "Die-off")
+func MostGrowthDieOff(ctx context.Context, db *sql.DB) ([]model.GrowthDieOff, error) {
 	rows, err := db.QueryContext(ctx,
 		`WITH diff AS (
 			SELECT run_id, live_count - lag(live_count) OVER win AS growth
@@ -236,26 +211,22 @@ func mostGrowthDieOff(ctx context.Context, db *sql.DB) error {
 		SELECT diff.run_id, coalesce(max(diff.growth),0) AS GROWTH, coalesce(min(diff.growth),0) AS DIE_OFF
 		FROM diff
 		GROUP BY diff.run_id;`)
+
+	var gds []model.GrowthDieOff
 	if err != nil {
-		return err
+		return gds, err
 	}
 	defer rows.Close()
-	var (
-		runID  int
-		growth int
-		dieOff int
-	)
+	var gd model.GrowthDieOff
 	for rows.Next() {
-		err := rows.Scan(&runID, &growth, &dieOff)
+		err := rows.Scan(&gd.RunID, &gd.Growth, &gd.DieOff)
 		if err != nil {
-			return err
+			return gds, err
 		}
-		fmt.Printf("%-5d %7d %7d\n", runID, growth, dieOff)
+		gds = append(gds, gd)
 	}
-	if err = rows.Err(); err != nil {
-		log.Println(err)
-	}
-	return err
+	err = rows.Err()
+	return gds, err
 }
 
 func UpdateRunById(ctx context.Context, db *sql.DB, runID int, endReason string) error {
@@ -294,4 +265,44 @@ func InsertConfig(ctx context.Context, db *sql.DB, u *model.Universe) (int64, er
 	).Scan(&configID)
 
 	return configID, err
+}
+
+// Inserts a new run record given a configID, and returns the runID.
+func InsertRun(ctx context.Context, db *sql.DB, configID int64) (int, error) {
+	var runID int
+	err := db.QueryRowContext(ctx,
+		`INSERT INTO runs (config_id, start_time) VALUES (?, ?) RETURNING ID`,
+		configID, time.Now()).Scan(&runID)
+	return runID, err
+}
+
+func GetUniverseConfigID(ctx context.Context, db *sql.DB, u *model.Universe) (int64, error) {
+	var configID int64
+	err := db.QueryRowContext(ctx,
+		`SELECT id FROM configs WHERE rule = ? AND initial_hash = ?`,
+		u.Rule, u.CurrentHash()).Scan(&configID)
+	return configID, err
+}
+
+func InsertConfigs(ctx context.Context, db *sql.DB, cfgs []model.Config) ([]int, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	var cfgIDs []int
+	if err != nil {
+		return cfgIDs, err
+	}
+	defer tx.Rollback()
+	stmt, errPrep := tx.Prepare(`INSERT INTO configs (width, height, rule, initial_hash)
+			VALUES (?, ?, ?, ?)`)
+	if errPrep != nil {
+		return cfgIDs, errPrep
+	}
+	defer stmt.Close()
+
+	for _, c := range cfgs {
+		if _, execErr := stmt.Exec(c.Width, c.Height, c.Rule, c.Initial_hash); execErr != nil {
+			return cfgIDs, execErr
+		}
+	}
+	err = tx.Commit()
+	return cfgIDs, err
 }

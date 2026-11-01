@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/Wei-xu293/gol/bench"
+	"github.com/Wei-xu293/gol/model"
+	"github.com/Wei-xu293/gol/store"
 	_ "modernc.org/sqlite"
 )
 
@@ -327,73 +329,33 @@ func DeleteSaveByName(ctx context.Context, db *sql.DB, name string) error {
 }
 
 func Stats(ctx context.Context, db *sql.DB) {
-	err := mostGrowthDieOff(ctx, db)
+	gds, err := store.MostGrowthDieOff(ctx, db)
 	if err != nil {
 		log.Println(err)
 		return
 	}
+	printGD(gds)
+
 	fmt.Println()
-	err = ticksData(ctx, db)
+	td, err := store.TicksData(ctx, db)
 	if err != nil {
 		log.Println(err)
 		return
 	}
+	printTD(td)
 }
 
-func ticksData(ctx context.Context, db *sql.DB) error {
-	var (
-		total_frames int
-		max_alive    int
-		avg_alive    float32
-	)
-	err := db.QueryRowContext(ctx,
-		`select
-    count(*) as total_frames,
-		coalesce(max(live_count), 0) as max_alive,
-		coalesce(round(avg(live_count), 1), 0.0) as avg_alive
-	from ticks`).Scan(&total_frames, &max_alive, &avg_alive)
-
-	if err != nil {
-		return err
-	}
-
+func printTD(td model.TicksInfo) {
 	fmt.Printf("%-10s %10s %10s\n", "Total frames", "Max alive", "Avg alive")
-	fmt.Printf("%-10d %10d %10.2f\n", total_frames, max_alive, avg_alive)
-	return err
+	fmt.Printf("%-10d %10d %10.2f\n", td.TotalFrames, td.MaxAlive, td.AvgAlive)
 }
 
-func mostGrowthDieOff(ctx context.Context, db *sql.DB) error {
+func printGD(gds []model.GrowthDieOff) {
 	fmt.Println("Most growth and die-off per run")
 	fmt.Printf("%-5s %7s %7s\n", "Run ID", "Growth", "Die-off")
-	rows, err := db.QueryContext(ctx,
-		`WITH diff AS (
-			SELECT run_id, live_count - lag(live_count) OVER win AS growth
-			FROM ticks
-			WINDOW win AS (PARTITION BY run_id ORDER BY frame)
-		)
-		SELECT diff.run_id, coalesce(max(diff.growth),0) AS GROWTH, coalesce(min(diff.growth),0) AS DIE_OFF
-		FROM diff
-		GROUP BY diff.run_id;`)
-	if err != nil {
-		return err
+	for _, gd := range gds {
+		fmt.Printf("%-5d %7d %7d\n", gd.RunID, gd.Growth, gd.DieOff)
 	}
-	defer rows.Close()
-	var (
-		runID  int
-		growth int
-		dieOff int
-	)
-	for rows.Next() {
-		err := rows.Scan(&runID, &growth, &dieOff)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("%-5d %7d %7d\n", runID, growth, dieOff)
-	}
-	if err = rows.Err(); err != nil {
-		log.Println(err)
-	}
-	return err
 }
 
 func UpdateRunById(ctx context.Context, db *sql.DB, runID int, endReason string) error {
