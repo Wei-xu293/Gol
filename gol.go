@@ -1,13 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
-	"hash/fnv"
 	"log"
 	"os"
 	"os/signal"
@@ -18,211 +16,6 @@ import (
 	"github.com/Wei-xu293/gol/store"
 	_ "modernc.org/sqlite"
 )
-
-type Universe struct {
-	Width     uint32
-	Height    uint32
-	Current   []uint8
-	Next      []uint8
-	Rule      uint32
-	liveCount int
-	b         bytes.Buffer
-}
-
-type Tick struct {
-	Frame     uint32
-	LiveCount uint32
-	Hash      uint32
-}
-
-type Config struct {
-	id           int64
-	width        uint32
-	height       uint32
-	rule         uint32
-	initial_hash uint32
-}
-
-var dirs = [8][2]int{
-	{-1, -1}, {-1, 0}, {-1, 1},
-	{0, -1}, {0, 1},
-	{1, -1}, {1, 0}, {1, 1},
-}
-
-func (u *Universe) NextState() {
-	w, h := int(u.Width), int(u.Height)
-	u.liveCount = 0
-
-	for i := range h {
-		for j := range w {
-			alive := 0
-			for _, d := range dirs {
-				ni := (i + d[0] + h) % h
-				nj := (j + d[1] + w) % w
-				alive += int(u.Current[ni*w+nj])
-			}
-
-			idx := i*w + j
-			shift := alive + int(u.Current[idx])*9
-			u.Next[idx] = uint8((u.Rule >> shift) & 1)
-			u.liveCount += int(u.Next[idx])
-		}
-	}
-	u.Current, u.Next = u.Next, u.Current
-}
-
-// TODO: use \033[%dA passing line count (Height - i)
-func (u *Universe) CurrentFrame(first bool) error {
-	if !first {
-		for range u.Height {
-			if _, err := u.b.WriteString("\033[1A\033[2K"); err != nil {
-				return err
-			}
-		}
-	}
-	for i := range u.Height {
-		if _, err := u.b.WriteString("\r\033[2K"); err != nil {
-			return err
-		}
-		for j := range u.Width {
-			a := ' '
-			idx := i*u.Width + j
-			if u.Current[idx] == 1 {
-				a = '*'
-			}
-			if _, err := u.b.WriteRune(a); err != nil {
-				return err
-			}
-		}
-		if _, err := u.b.WriteRune('\n'); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (u *Universe) LiveCount() int {
-	return u.liveCount
-}
-
-func (u *Universe) CurrentHash() uint32 {
-	h := fnv.New32a()
-	h.Write(u.Current)
-	return h.Sum32()
-}
-
-func createConfigsTable(ctx context.Context, db *sql.DB) {
-	_, err := db.ExecContext(ctx,
-		`CREATE TABLE IF NOT EXISTS configs (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			width INTEGER,
-			height INTEGER,
-			rule INTEGER,
-			initial_hash INTEGER,
-
-			UNIQUE (rule, initial_hash)
-		)`,
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func createRunsTable(ctx context.Context, db *sql.DB) {
-	_, err := db.ExecContext(ctx,
-		`CREATE TABLE IF NOT EXISTS runs (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			config_id INTEGER,
-			start_time DATETIME,
-			end_reason TEXT,
-
-			FOREIGN KEY (config_id) REFERENCES configs(id)
-		)`,
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func createTicksTable(ctx context.Context, db *sql.DB) {
-	_, err := db.ExecContext(ctx,
-		`CREATE TABLE IF NOT EXISTS ticks (
-			run_id INTEGER,
-			frame INTEGER,
-			live_count INTEGER,
-			hash INTEGER,
-
-			PRIMARY KEY (run_id, frame),
-			FOREIGN KEY (run_id) REFERENCES runs(id)
-		) WITHOUT ROWID`,
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func insertTicks(ctx context.Context, db *sql.DB, runID int, ticks []Tick) error {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	stmt, errPrep := tx.Prepare(`INSERT INTO ticks (run_id, frame, live_count, hash)
-			VALUES (?, ?, ?, ?)`)
-	if errPrep != nil {
-		return errPrep
-	}
-	defer stmt.Close()
-
-	for _, t := range ticks {
-		if _, execErr := stmt.Exec(runID, t.Frame, t.LiveCount, t.Hash); execErr != nil {
-			return execErr
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func createSavesTable(ctx context.Context, db *sql.DB) {
-	_, err := db.ExecContext(ctx,
-		`CREATE TABLE IF NOT EXISTS saves (
-			name TEXT PRIMARY KEY,
-			run_id INTEGER,
-			frame INTEGER,
-			current BLOB,
-
-			FOREIGN KEY (run_id) REFERENCES runs(id)
-		)`,
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func Save(ctx context.Context, db *sql.DB, runID int, u *Universe,
-	saveCmd *flag.FlagSet, saveName *string, frameTick int) {
-	if saveCmd != nil {
-		saveUniverse(ctx, db, runID, u, *saveName, frameTick)
-	}
-}
-
-func saveUniverse(ctx context.Context, db *sql.DB, runID int,
-	u *Universe, saveName string, frameTick int) {
-	result, err := db.ExecContext(ctx,
-		`INSERT INTO saves (name, run_id, frame, current) VALUES (?, ?, ?, ?)
-		ON CONFLICT (name) DO UPDATE SET run_id = excluded.run_id, frame = excluded.frame, current = excluded.current;`,
-		saveName, runID, frameTick, u.Current)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-	rows, err := result.RowsAffected()
-	if err == nil && rows == 1 {
-		log.Printf("Successfully saved a run: %s", saveName)
-	}
-}
 
 func initGrid() model.Universe {
 	const (
@@ -393,10 +186,11 @@ func main() {
 	}
 	log.Println(status)
 
-	createConfigsTable(ctx, db)
-	createRunsTable(ctx, db)
-	createTicksTable(ctx, db)
-	createSavesTable(ctx, db)
+	err = store.InitDB(ctx, db)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 
 	fmt.Print("\033[?25l")       // hide cursor
 	defer fmt.Print("\033[?25h") // show cursor when done
@@ -446,7 +240,7 @@ func main() {
 				deleteCmd.PrintDefaults()
 				return
 			}
-			err := DeleteSaveByName(ctx, db, *deleteSavedName)
+			err := store.DeleteSaveByName(ctx, db, *deleteSavedName)
 			if err != nil {
 				log.Println(err)
 			}
@@ -475,9 +269,7 @@ func main() {
 		configID, err = store.InsertConfig(ctx, db, &u)
 
 		if errors.Is(err, sql.ErrNoRows) {
-			err = db.QueryRowContext(ctx,
-				`SELECT id FROM configs WHERE rule = ? AND initial_hash = ?`,
-				u.Rule, u.CurrentHash()).Scan(&configID)
+			configID, err = store.GetUniverseConfigID(ctx, db, &u)
 		}
 		if err != nil {
 			log.Println(err)
@@ -488,16 +280,13 @@ func main() {
 	}
 	fmt.Println("Game config:", configID)
 
-	var runID int
-	err = db.QueryRowContext(ctx,
-		`INSERT INTO runs (config_id, start_time) VALUES (?, ?) RETURNING ID`,
-		configID, time.Now()).Scan(&runID)
+	runID, err := store.InsertRun(ctx, db, configID)
 	if err != nil {
 		log.Println(err)
 		return
 	}
 
-	cnts := make([]Tick, 0)
+	cnts := make([]model.Tick, 0)
 
 	first := true
 	var endReason string
@@ -516,10 +305,10 @@ loop:
 			if !first {
 				u.NextState()
 			}
-			cnts = append(cnts, Tick{
-				uint32(ticks),
-				uint32(u.LiveCount()),
-				u.CurrentHash(),
+			cnts = append(cnts, model.Tick{
+				Frame:     uint32(ticks),
+				LiveCount: uint32(u.LiveCount()),
+				Hash:      u.CurrentHash(),
 			})
 			u.CurrentFrame(first)
 			u.B.WriteTo(os.Stdout)
@@ -547,7 +336,7 @@ loop:
 	fmt.Printf("Game over after %d ticks\n", ticks)
 
 	fmt.Printf("%d new ticks\n", len(cnts))
-	err = insertTicks(ctx, db, runID, cnts)
+	err = store.InsertTicks(ctx, db, runID, cnts)
 	if err != nil {
 		fmt.Printf("Failed to insert %d ticks\n", ticks)
 		return
@@ -557,7 +346,11 @@ loop:
 		store.Save(ctx, db, runID, &u, saveCmd, saveName, ticks)
 	}
 
-	err = UpdateRunById(ctx, db, runID, endReason)
+	if enableSave {
+		store.Save(ctx, db, runID, &u, loadCmd, loadName, ticks)
+	}
+
+	err = store.UpdateRunById(ctx, db, runID, endReason)
 	if err != nil {
 		fmt.Println(err)
 	}
