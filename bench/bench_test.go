@@ -54,6 +54,19 @@ func ConfigFromUniv(u *model.Universe) model.Config {
 	}
 }
 
+func genTicks(u *model.Universe) []model.Tick {
+	ticks := make([]model.Tick, 1000)
+	for j := range len(ticks) {
+		u.NextState()
+		ticks[j] = model.Tick{
+			Frame:     uint32(j),
+			LiveCount: uint32(u.LiveCount),
+			Hash:      u.CurrentHash(),
+		}
+	}
+	return ticks
+}
+
 func setupFileDB(b *testing.B) *sql.DB {
 	dbFile := filepath.Join(b.TempDir(), "bench.db")
 
@@ -68,6 +81,7 @@ func setupFileDB(b *testing.B) *sql.DB {
 
 	return conn
 }
+
 func BenchmarkInsertsTicks(b *testing.B) {
 	univs := make([]model.Universe, 1000)
 	size, rule := uint32(32), uint32(0x1808)
@@ -99,13 +113,12 @@ func BenchmarkInsertsTicks(b *testing.B) {
 				b.ResetTimer()
 			default:
 				b.ResetTimer()
-				break
 			}
-			for _, u := range univs {
-				configID, err := store.InsertConfig(ctx, db, &u)
+			for i := range univs {
+				configID, err := store.InsertConfig(ctx, db, &univs[i])
 
 				if errors.Is(err, sql.ErrNoRows) {
-					configID, err = store.GetUniverseConfigID(ctx, db, &u)
+					configID, err = store.GetUniverseConfigID(ctx, db, &univs[i])
 				}
 				if err != nil {
 					b.Fatalf("failed to insert/retrieve configID: %v", err)
@@ -114,15 +127,9 @@ func BenchmarkInsertsTicks(b *testing.B) {
 				if err != nil {
 					b.Fatalf("failed to insert run: %v", err)
 				}
-				ticks := make([]model.Tick, 1000)
-				for j := range len(ticks) {
-					u.NextState()
-					ticks[j] = model.Tick{
-						Frame:     uint32(j),
-						LiveCount: uint32(u.LiveCount),
-						Hash:      u.CurrentHash(),
-					}
-				}
+				b.StopTimer()
+				ticks := genTicks(&univs[i])
+				b.StartTimer()
 				if err := store.InsertTicks(ctx, db, runID, ticks); err != nil {
 					b.Fatalf("failed to insert ticks: %v", err)
 				}
