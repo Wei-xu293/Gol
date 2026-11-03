@@ -77,7 +77,7 @@ func BenchmarkInserts(b *testing.B) {
 	}
 	db := setupFileDB(b)
 	defer db.Close()
-	var ctx context.Context
+	ctx := context.Background()
 	err := store.InitDB(ctx, db)
 	if err != nil {
 		b.Fatalf("failed to create tables: %v", err)

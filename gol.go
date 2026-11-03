@@ -11,7 +11,6 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/Wei-xu293/gol/bench"
 	"github.com/Wei-xu293/gol/model"
 	"github.com/Wei-xu293/gol/store"
 	_ "modernc.org/sqlite"
@@ -158,18 +157,9 @@ func main() {
 	deleteCmd := flag.NewFlagSet("delete", flag.ExitOnError)
 	deleteSavedName := deleteCmd.String("name", "", "name of the save to delete")
 
-	bf := flag.Bool("bench", false, "benchmark SQL")
-
 	cycleFlag := flag.Bool("cycle", false, "detect cycle")
 
 	flag.Parse()
-
-	if *bf {
-		if err := bench.Run(); err != nil {
-			log.Fatal(err)
-		}
-		return
-	}
 
 	ctx := context.Background()
 
