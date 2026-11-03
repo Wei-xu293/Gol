@@ -3,8 +3,10 @@ package bench
 import (
 	"database/sql"
 	"fmt"
+	"math/rand/v2"
 	"time"
 
+	"github.com/Wei-xu293/gol/model"
 	_ "modernc.org/sqlite"
 )
 
@@ -15,6 +17,27 @@ func Run() error {
 	}
 	defer db.Close()
 	return nil
+}
+
+func RancCurrent(width uint32, height uint32) ([]uint8, int) {
+	cnt := 0
+	curr := make([]uint8, width*height)
+	for i := range curr {
+		curr[i] = uint8(rand.UintN(2))
+		cnt += int(curr[i])
+	}
+	return curr, cnt
+}
+
+func RandUniverse(size uint32) model.Universe {
+	curr, cnt := RancCurrent(size, size)
+	return model.Universe{
+		Width:     size,
+		Height:    size,
+		Current:   curr,
+		Next:      make([]uint8, size*size),
+		LiveCount: cnt,
+	}
 }
 
 func seedMassiveData(db *sql.DB) error {

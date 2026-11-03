@@ -307,7 +307,7 @@ loop:
 			}
 			cnts = append(cnts, model.Tick{
 				Frame:     uint32(ticks),
-				LiveCount: uint32(u.LiveCount()),
+				LiveCount: uint32(u.LiveCount),
 				Hash:      u.CurrentHash(),
 			})
 			u.CurrentFrame(first)
@@ -326,7 +326,7 @@ loop:
 				}
 			}
 
-			if u.LiveCount() == 0 {
+			if u.LiveCount == 0 {
 				fmt.Println("Extinction")
 				endReason = "extinction"
 				break loop

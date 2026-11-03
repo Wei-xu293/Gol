@@ -11,7 +11,7 @@ type Universe struct {
 	Current   []uint8
 	Next      []uint8
 	Rule      uint32
-	liveCount int
+	LiveCount int
 	B         bytes.Buffer
 }
 
@@ -50,7 +50,7 @@ var dirs = [8][2]int{
 // TODO: count distinct cells version
 func (u *Universe) NextState() {
 	w, h := int(u.Width), int(u.Height)
-	u.liveCount = 0
+	u.LiveCount = 0
 
 	for i := range h {
 		for j := range w {
@@ -64,7 +64,7 @@ func (u *Universe) NextState() {
 			idx := i*w + j
 			shift := alive + int(u.Current[idx])*9
 			u.Next[idx] = uint8((u.Rule >> shift) & 1)
-			u.liveCount += int(u.Next[idx])
+			u.LiveCount += int(u.Next[idx])
 		}
 	}
 	u.Current, u.Next = u.Next, u.Current
@@ -101,14 +101,10 @@ func (u *Universe) CurrentFrame(first bool) error {
 }
 
 func (u *Universe) CountLiveCells() {
-	u.liveCount = 0
+	u.LiveCount = 0
 	for _, val := range u.Current {
-		u.liveCount += int(val)
+		u.LiveCount += int(val)
 	}
-}
-
-func (u *Universe) LiveCount() int {
-	return u.liveCount
 }
 
 func (u *Universe) CurrentHash() uint32 {

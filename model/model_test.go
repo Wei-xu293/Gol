@@ -12,7 +12,7 @@ func getSquare() Universe {
 		Current:   slices.Clone(slices.Repeat([]uint8{1}, 4)),
 		Next:      make([]uint8, 4),
 		Rule:      0x1808,
-		liveCount: 4,
+		LiveCount: 4,
 	}
 }
 
