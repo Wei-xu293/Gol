@@ -47,6 +47,7 @@ var dirs = [8][2]int{
 	{1, -1}, {1, 0}, {1, 1},
 }
 
+// TODO: count distinct cells version
 func (u *Universe) NextState() {
 	w, h := int(u.Width), int(u.Height)
 	u.liveCount = 0
