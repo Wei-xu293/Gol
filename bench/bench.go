@@ -1,14 +1,16 @@
 package bench
 
 import (
+	"context"
 	"database/sql"
-	"fmt"
+	"errors"
 	"math/rand/v2"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/Wei-xu293/gol/model"
+	"github.com/Wei-xu293/gol/store"
 	_ "modernc.org/sqlite"
 )
 
@@ -73,26 +75,37 @@ func BenchmarkInserts(b *testing.B) {
 	for i := range univs {
 		univs[i] = RandUniverse(size, rule)
 	}
-
+	db := setupFileDB(b)
+	defer db.Close()
+	var ctx context.Context
+	err := store.InitDB(ctx, db)
+	if err != nil {
+		b.Fatalf("failed to create tables: %v", err)
+	}
+	b.ResetTimer()
 	for b.Loop() {
+		for _, u := range univs {
+			configID, err := store.InsertConfig(ctx, db, &u)
 
+			if errors.Is(err, sql.ErrNoRows) {
+				configID, err = store.GetUniverseConfigID(ctx, db, &u)
+			}
+			if err != nil {
+				b.Fatalf("failed to insert/retrieve configID: %v", err)
+			}
+			runID, err := store.InsertRun(ctx, db, configID)
+			if err != nil {
+				b.Fatalf("failed to insert run: %v", err)
+			}
+			ticks := make([]model.Tick, 1000*1000)
+			for j := range 1001 {
+				ticks = append(ticks, model.Tick{
+					Frame:     uint32(j),
+					LiveCount: uint32(u.LiveCount),
+					Hash:      u.CurrentHash(),
+				})
+			}
+			store.InsertTicks(ctx, db, runID, ticks)
+		}
 	}
-}
-
-func seedMassiveData(db *sql.DB) error {
-	start := time.Now()
-
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	stmt, err := tx.Prepare(`INSERT INTO ticks (run_id, frame, live_count, hash)
-			VALUES (?, ?, ?, ?)`)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	fmt.Printf("Seeded rows in %v\n", time.Since(start))
-	return nil
 }
