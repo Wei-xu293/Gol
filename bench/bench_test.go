@@ -121,11 +121,12 @@ func BenchmarkInsertsTicks(b *testing.B) {
 					if err != nil {
 						b.Fatalf("failed pragma: %v", err)
 					}
-					var syncFlag string
+					var syncFlag int
 					err = db.QueryRowContext(ctx, "PRAGMA synchronous;").Scan(&syncFlag)
 					if err != nil {
 						b.Fatalf("failed pragma q: %v", err)
 					}
+					b.Logf("synchronous = %d", syncFlag)
 					_, err = db.ExecContext(ctx, `PRAGMA synchronous=NORMAL;`)
 					if err != nil {
 						b.Fatalf("failed pragma: %v", err)
