@@ -88,52 +88,71 @@ func BenchmarkInsertsTicks(b *testing.B) {
 	for i := range univs {
 		univs[i] = RandUniverse(size, rule)
 	}
-	db := setupFileDB(b)
-	defer db.Close()
-	ctx := context.Background()
-	err := store.InitDB(ctx, db)
-	if err != nil {
-		b.Fatalf("failed to create tables: %v", err)
+	var allTicks [][]model.Tick
+	for i := range univs {
+		allTicks = append(allTicks, genTicks(&univs[i]))
 	}
-	b.ResetTimer()
 	var tests = []struct {
 		name string
 	}{
 		{name: "Default"},
 		{name: "WAL"},
+		{name: "WAL_normal"},
 	}
 	for _, tc := range tests {
 		b.Run(tc.name, func(b *testing.B) {
-			switch tc.name {
-			case "WAL":
-				_, err := db.ExecContext(ctx, `PRAGMA journal_mode=WAL;`)
+			for b.Loop() {
+				db := setupFileDB(b)
+				defer db.Close()
+				ctx := context.Background()
+				err := store.InitDB(ctx, db)
 				if err != nil {
-					b.Fatalf("failed pragma: %v", err)
+					b.Fatalf("failed to create tables: %v", err)
 				}
-				b.ResetTimer()
-			default:
-				b.ResetTimer()
-			}
-			for i := range univs {
-				configID, err := store.InsertConfig(ctx, db, &univs[i])
+				switch tc.name {
+				case "WAL":
+					_, err := db.ExecContext(ctx, `PRAGMA journal_mode=WAL;`)
+					if err != nil {
+						b.Fatalf("failed pragma: %v", err)
+					}
+					b.ResetTimer()
+				case "WAL_normal":
+					_, err := db.ExecContext(ctx, `PRAGMA journal_mode=WAL;`)
+					if err != nil {
+						b.Fatalf("failed pragma: %v", err)
+					}
+					var syncFlag string
+					err = db.QueryRowContext(ctx, "PRAGMA synchronous;").Scan(&syncFlag)
+					if err != nil {
+						b.Fatalf("failed pragma q: %v", err)
+					}
+					_, err = db.ExecContext(ctx, `PRAGMA synchronous=NORMAL;`)
+					if err != nil {
+						b.Fatalf("failed pragma: %v", err)
+					}
+					b.ResetTimer()
+				default:
+					b.ResetTimer()
+				}
+				for i := range univs {
+					configID, err := store.InsertConfig(ctx, db, &univs[i])
 
-				if errors.Is(err, sql.ErrNoRows) {
-					configID, err = store.GetUniverseConfigID(ctx, db, &univs[i])
-				}
-				if err != nil {
-					b.Fatalf("failed to insert/retrieve configID: %v", err)
-				}
-				runID, err := store.InsertRun(ctx, db, configID)
-				if err != nil {
-					b.Fatalf("failed to insert run: %v", err)
-				}
-				b.StopTimer()
-				ticks := genTicks(&univs[i])
-				b.StartTimer()
-				if err := store.InsertTicks(ctx, db, runID, ticks); err != nil {
-					b.Fatalf("failed to insert ticks: %v", err)
+					if errors.Is(err, sql.ErrNoRows) {
+						configID, err = store.GetUniverseConfigID(ctx, db, &univs[i])
+					}
+					if err != nil {
+						b.Fatalf("failed to insert/retrieve configID: %v", err)
+					}
+					runID, err := store.InsertRun(ctx, db, configID)
+					if err != nil {
+						b.Fatalf("failed to insert run: %v", err)
+					}
+					if err := store.InsertTicks(ctx, db, runID, allTicks[i]); err != nil {
+						b.Fatalf("failed to insert ticks: %v", err)
+					}
 				}
 			}
+
 		})
 	}
 }
