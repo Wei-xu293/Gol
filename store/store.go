@@ -82,6 +82,22 @@ func InitDB(ctx context.Context, db *sql.DB) error {
 	if err := createTicksTable(ctx, db); err != nil {
 		return err
 	}
+
+	_, err := db.ExecContext(ctx, `PRAGMA journal_mode=WAL;`)
+	if err != nil {
+		return fmt.Errorf("failed pragma: %v\n", err)
+	}
+	var syncFlag int
+	err = db.QueryRowContext(ctx, "PRAGMA synchronous;").Scan(&syncFlag)
+	if err != nil {
+		return fmt.Errorf("failed pragma q: %v\n", err)
+	}
+	fmt.Printf("synchronous = %d\n", syncFlag)
+	_, err = db.ExecContext(ctx, `PRAGMA synchronous=NORMAL;`)
+	if err != nil {
+		return fmt.Errorf("failed pragma: %v\n", err)
+	}
+
 	return nil
 }
 

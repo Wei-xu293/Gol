@@ -55,6 +55,7 @@ func initGrid() model.Universe {
 	return u
 }
 
+// TODO: clean
 func List(ctx context.Context, db *sql.DB) {
 	fmt.Printf("%-10s %8s %8s\n", "Name", "Run ID", "Frame")
 	rows, err := db.QueryContext(ctx, "SELECT name, run_id, frame FROM saves;")
@@ -79,19 +80,6 @@ func List(ctx context.Context, db *sql.DB) {
 	if err = rows.Err(); err != nil {
 		log.Println(err)
 	}
-}
-
-func DeleteSaveByName(ctx context.Context, db *sql.DB, name string) error {
-	res, err := db.ExecContext(ctx, "DELETE FROM saves WHERE name = ?", name)
-	if err != nil {
-		return err
-	}
-	rows, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	log.Printf("Rows affected %d\n", rows)
-	return nil
 }
 
 func Stats(ctx context.Context, db *sql.DB) {
@@ -124,24 +112,6 @@ func printGD(gds []model.GrowthDieOff) {
 	}
 }
 
-func UpdateRunById(ctx context.Context, db *sql.DB, runID int, endReason string) error {
-	res, err := db.ExecContext(ctx,
-		`UPDATE runs
-		 SET end_reason = ?
-	  	 WHERE id = ?;`, endReason, runID)
-	if err != nil {
-		return err
-	}
-	rows, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rows != 1 {
-		return fmt.Errorf("update run by id: %d rows affected", rows)
-	}
-	return nil
-}
-
 func main() {
 	u := initGrid()
 
@@ -158,6 +128,8 @@ func main() {
 	deleteSavedName := deleteCmd.String("name", "", "name of the save to delete")
 
 	cycleFlag := flag.Bool("cycle", false, "detect cycle")
+
+	headlessFlag := flag.Bool("headless", false, "headless run")
 
 	flag.Parse()
 
@@ -245,7 +217,6 @@ func main() {
 	u.CountLiveCells()
 
 	ticker := time.NewTicker(67 * time.Millisecond)
-	defer ticker.Stop()
 
 	timeout := time.After(30 * time.Second)
 
@@ -280,46 +251,51 @@ func main() {
 
 	first := true
 	var endReason string
-loop:
-	for {
-		select {
-		case <-timeout:
-			fmt.Println("Done!")
-			endReason = "timeout"
-			break loop
-		case interrupt := <-c:
-			fmt.Println("Got signal:", interrupt)
-			endReason = "interrupt"
-			break loop
-		case <-ticker.C:
-			if !first {
-				u.NextState()
-			}
-			cnts = append(cnts, model.Tick{
-				Frame:     uint32(ticks),
-				LiveCount: uint32(u.LiveCount),
-				Hash:      u.CurrentHash(),
-			})
-			u.CurrentFrame(first)
-			u.B.WriteTo(os.Stdout)
-			u.B.Reset()
-			first = false
-			ticks++
-
-			if *cycleFlag {
-				if _, ok := seen[u.CurrentHash()]; ok {
-					fmt.Printf("Cycle detected on frame %d\n", ticks-1)
-					endReason = "cycle"
-					break loop
-				} else {
-					seen[u.CurrentHash()] = struct{}{}
-				}
-			}
-
-			if u.LiveCount == 0 {
-				fmt.Println("Extinction")
-				endReason = "extinction"
+	if *headlessFlag {
+		ticker.Stop()
+	} else {
+		defer ticker.Stop()
+	loop:
+		for {
+			select {
+			case <-timeout:
+				fmt.Println("Done!")
+				endReason = "timeout"
 				break loop
+			case interrupt := <-c:
+				fmt.Println("Got signal:", interrupt)
+				endReason = "interrupt"
+				break loop
+			case <-ticker.C:
+				if !first {
+					u.NextState()
+				}
+				cnts = append(cnts, model.Tick{
+					Frame:     uint32(ticks),
+					LiveCount: uint32(u.LiveCount),
+					Hash:      u.CurrentHash(),
+				})
+				u.CurrentFrame(first)
+				u.B.WriteTo(os.Stdout)
+				u.B.Reset()
+				first = false
+				ticks++
+
+				if *cycleFlag {
+					if _, ok := seen[u.CurrentHash()]; ok {
+						fmt.Printf("Cycle detected on frame %d\n", ticks-1)
+						endReason = "cycle"
+						break loop
+					} else {
+						seen[u.CurrentHash()] = struct{}{}
+					}
+				}
+
+				if u.LiveCount == 0 {
+					fmt.Println("Extinction")
+					endReason = "extinction"
+					break loop
+				}
 			}
 		}
 	}
