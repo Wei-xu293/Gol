@@ -255,50 +255,56 @@ func main() {
 		ticker.Stop()
 	} else {
 		defer ticker.Stop()
-	loop:
-		for {
-			select {
-			case <-timeout:
-				fmt.Println("Done!")
-				endReason = "timeout"
-				break loop
-			case interrupt := <-c:
-				fmt.Println("Got signal:", interrupt)
-				endReason = "interrupt"
-				break loop
-			case <-ticker.C:
-				if !first {
-					u.NextState()
-				}
-				cnts = append(cnts, model.Tick{
-					Frame:     uint32(ticks),
-					LiveCount: uint32(u.LiveCount),
-					Hash:      u.CurrentHash(),
-				})
+	}
+loop:
+	for {
+		select {
+		case <-timeout:
+			if *headlessFlag {
+				continue
+			}
+			fmt.Println("Done!")
+			endReason = "timeout"
+			break loop
+		case interrupt := <-c:
+			fmt.Println("Got signal:", interrupt)
+			endReason = "interrupt"
+			break loop
+		case <-ticker.C:
+			if !first {
+				u.NextState()
+			}
+			cnts = append(cnts, model.Tick{
+				Frame:     uint32(ticks),
+				LiveCount: uint32(u.LiveCount),
+				Hash:      u.CurrentHash(),
+			})
+			if !*headlessFlag {
 				u.CurrentFrame(first)
 				u.B.WriteTo(os.Stdout)
 				u.B.Reset()
-				first = false
-				ticks++
+			}
+			first = false
+			ticks++
 
-				if *cycleFlag {
-					if _, ok := seen[u.CurrentHash()]; ok {
-						fmt.Printf("Cycle detected on frame %d\n", ticks-1)
-						endReason = "cycle"
-						break loop
-					} else {
-						seen[u.CurrentHash()] = struct{}{}
-					}
-				}
-
-				if u.LiveCount == 0 {
-					fmt.Println("Extinction")
-					endReason = "extinction"
+			if *cycleFlag {
+				if _, ok := seen[u.CurrentHash()]; ok {
+					fmt.Printf("Cycle detected on frame %d\n", ticks-1)
+					endReason = "cycle"
 					break loop
+				} else {
+					seen[u.CurrentHash()] = struct{}{}
 				}
+			}
+
+			if u.LiveCount == 0 {
+				fmt.Println("Extinction")
+				endReason = "extinction"
+				break loop
 			}
 		}
 	}
+
 	fmt.Printf("Game over after %d ticks\n", ticks)
 
 	fmt.Printf("%d new ticks\n", len(cnts))
