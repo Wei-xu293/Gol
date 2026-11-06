@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"math/rand/v2"
 	"path/filepath"
 	"testing"
 	"time"
@@ -21,37 +20,6 @@ func Run() error {
 	}
 	defer db.Close()
 	return nil
-}
-
-func RancCurrent(width uint32, height uint32) ([]uint8, int) {
-	cnt := 0
-	curr := make([]uint8, width*height)
-	for i := range curr {
-		curr[i] = uint8(rand.UintN(2))
-		cnt += int(curr[i])
-	}
-	return curr, cnt
-}
-
-func RandUniverse(size uint32, rule uint32) model.Universe {
-	curr, cnt := RancCurrent(size, size)
-	return model.Universe{
-		Width:     size,
-		Height:    size,
-		Current:   curr,
-		Next:      make([]uint8, size*size),
-		LiveCount: cnt,
-		Rule:      rule,
-	}
-}
-
-func ConfigFromUniv(u *model.Universe) model.Config {
-	return model.Config{
-		Width:        u.Width,
-		Height:       u.Height,
-		Rule:         u.Rule,
-		Initial_hash: u.CurrentHash(),
-	}
 }
 
 func genTicks(u *model.Universe) []model.Tick {
@@ -86,7 +54,7 @@ func BenchmarkInsertsTicks(b *testing.B) {
 	univs := make([]model.Universe, 10)
 	size, rule := uint32(32), uint32(0x1808)
 	for i := range univs {
-		univs[i] = RandUniverse(size, rule)
+		univs[i] = model.RandUniverse(size, rule)
 	}
 	var allTicks [][]model.Tick
 	for i := range univs {

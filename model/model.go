@@ -3,6 +3,7 @@ package model
 import (
 	"bytes"
 	"hash/fnv"
+	"math/rand/v2"
 )
 
 type Universe struct {
@@ -111,4 +112,35 @@ func (u *Universe) CurrentHash() uint32 {
 	h := fnv.New32a()
 	h.Write(u.Current)
 	return h.Sum32()
+}
+
+func RancCurrent(width uint32, height uint32) ([]uint8, int) {
+	cnt := 0
+	curr := make([]uint8, width*height)
+	for i := range curr {
+		curr[i] = uint8(rand.UintN(2))
+		cnt += int(curr[i])
+	}
+	return curr, cnt
+}
+
+func RandUniverse(size uint32, rule uint32) Universe {
+	curr, cnt := RancCurrent(size, size)
+	return Universe{
+		Width:     size,
+		Height:    size,
+		Current:   curr,
+		Next:      make([]uint8, size*size),
+		LiveCount: cnt,
+		Rule:      rule,
+	}
+}
+
+func ConfigFromUniv(u *Universe) Config {
+	return Config{
+		Width:        u.Width,
+		Height:       u.Height,
+		Rule:         u.Rule,
+		Initial_hash: u.CurrentHash(),
+	}
 }
