@@ -83,7 +83,7 @@ func setupFileDB(b *testing.B) *sql.DB {
 }
 
 func BenchmarkInsertsTicks(b *testing.B) {
-	univs := make([]model.Universe, 1000)
+	univs := make([]model.Universe, 10)
 	size, rule := uint32(32), uint32(0x1808)
 	for i := range univs {
 		univs[i] = RandUniverse(size, rule)
@@ -102,6 +102,7 @@ func BenchmarkInsertsTicks(b *testing.B) {
 	for _, tc := range tests {
 		b.Run(tc.name, func(b *testing.B) {
 			for b.Loop() {
+				b.StopTimer()
 				db := setupFileDB(b)
 				defer db.Close()
 				ctx := context.Background()
@@ -115,7 +116,6 @@ func BenchmarkInsertsTicks(b *testing.B) {
 					if err != nil {
 						b.Fatalf("failed pragma: %v", err)
 					}
-					b.ResetTimer()
 				case "WAL_normal":
 					_, err := db.ExecContext(ctx, `PRAGMA journal_mode=WAL;`)
 					if err != nil {
@@ -131,10 +131,14 @@ func BenchmarkInsertsTicks(b *testing.B) {
 					if err != nil {
 						b.Fatalf("failed pragma: %v", err)
 					}
-					b.ResetTimer()
+					err = db.QueryRowContext(ctx, "PRAGMA synchronous;").Scan(&syncFlag)
+					if err != nil {
+						b.Fatalf("failed pragma q: %v", err)
+					}
+					b.Logf("after, synchronous = %d", syncFlag)
 				default:
-					b.ResetTimer()
 				}
+				b.StartTimer()
 				for i := range univs {
 					configID, err := store.InsertConfig(ctx, db, &univs[i])
 
