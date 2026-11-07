@@ -167,30 +167,26 @@ func LoadUniverse(loadName string, db *sql.DB, ctx context.Context) (model.Unive
 	return u, cfg, frame, err
 }
 
-func List(ctx context.Context, db *sql.DB) {
-	fmt.Printf("%-10s %8s %8s\n", "Name", "Run ID", "Frame")
+func GetSaves(ctx context.Context, db *sql.DB) ([]model.SaveInfo, error) {
 	rows, err := db.QueryContext(ctx, "SELECT name, run_id, frame FROM saves;")
 	if err != nil {
 		log.Print(err)
-		return
+		return nil, err
 	}
-	var (
-		name  string
-		runID int
-		frame int
-	)
+	var s model.SaveInfo
+	saves := make([]model.SaveInfo, 0)
 	defer rows.Close()
 	for rows.Next() {
-		err := rows.Scan(&name, &runID, &frame)
+		err := rows.Scan(&s.Name, &s.RunID, &s.Frame)
 		if err != nil {
-			log.Print(err)
-			return
+			return nil, err
 		}
-		fmt.Printf("%-10s %8d %8d\n", name, runID, frame)
+		saves = append(saves, s)
 	}
 	if err = rows.Err(); err != nil {
-		log.Println(err)
+		return saves, err
 	}
+	return saves, nil
 }
 
 func DeleteSaveByName(ctx context.Context, db *sql.DB, name string) error {

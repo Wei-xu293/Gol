@@ -55,31 +55,17 @@ func initGrid() model.Universe {
 	return u
 }
 
-// TODO: clean
-func List(ctx context.Context, db *sql.DB) {
+func listSaves(ctx context.Context, db *sql.DB) {
 	fmt.Printf("%-10s %8s %8s\n", "Name", "Run ID", "Frame")
-	rows, err := db.QueryContext(ctx, "SELECT name, run_id, frame FROM saves;")
+	saves, err := store.GetSaves(ctx, db)
 	if err != nil {
-		log.Print(err)
+		log.Println(err)
 		return
 	}
-	var (
-		name  string
-		runID int
-		frame int
-	)
-	defer rows.Close()
-	for rows.Next() {
-		err := rows.Scan(&name, &runID, &frame)
-		if err != nil {
-			log.Print(err)
-			return
-		}
-		fmt.Printf("%-10s %8d %8d\n", name, runID, frame)
+	for _, s := range saves {
+		fmt.Printf("%-10s %8d %8d\n", s.Name, s.RunID, s.Frame)
 	}
-	if err = rows.Err(); err != nil {
-		log.Println(err)
-	}
+	fmt.Println()
 }
 
 func Stats(ctx context.Context, db *sql.DB) {
@@ -190,7 +176,7 @@ func main() {
 				return
 			}
 		case "list":
-			List(ctx, db)
+			listSaves(ctx, db)
 			return
 		case "stats":
 			Stats(ctx, db)

@@ -42,6 +42,12 @@ type GrowthDieOff struct {
 	DieOff int
 }
 
+type SaveInfo struct {
+	Name  string
+	RunID int
+	Frame int
+}
+
 var dirs = [8][2]int{
 	{-1, -1}, {-1, 0}, {-1, 1},
 	{0, -1}, {0, 1},
