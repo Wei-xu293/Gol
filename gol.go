@@ -232,6 +232,7 @@ func main() {
 		log.Println(err)
 		return
 	}
+	fmt.Printf("Run ID: %d\n", runID)
 
 	cnts := make([]model.Tick, 0)
 
