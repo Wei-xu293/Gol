@@ -98,6 +98,31 @@ func printGD(gds []model.GrowthDieOff) {
 	}
 }
 
+func RunSimulation(ctx context.Context, maxTicks int, u *model.Universe, first bool, onTick func(u *model.Universe, first bool) bool) error {
+	for range maxTicks {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if onTick != nil {
+				onTick(u, first)
+			}
+		}
+
+	}
+	return nil
+}
+
+func hunt(duration time.Duration, maxTicks int, u *model.Universe, first bool) {
+	sigCtx, stopSignal := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stopSignal()
+	runCtx, stopTimeout := context.WithTimeout(sigCtx, duration)
+	defer stopTimeout()
+
+	err := RunSimulation(runCtx, maxTicks, u, first, nil)
+	fmt.Println(err)
+}
+
 func main() {
 	u := initGrid()
 
@@ -193,7 +218,8 @@ func main() {
 				log.Println(err)
 			}
 			return
-		case "bench":
+		case "hunt":
+			hunt(30*time.Second, 10000, &u, true)
 			return
 		default:
 			break
@@ -203,6 +229,18 @@ func main() {
 	u.CountLiveCells()
 
 	ticker := time.NewTicker(67 * time.Millisecond)
+	defer ticker.Stop()
+
+	/*
+		onTick := func(u *Universe, first bool) {
+			select {
+			case <-ticker.C:
+				u.CurrentFrame(first)
+				u.B.WriteTo(os.Stdout)
+				u.B.Reset()
+			}
+		}
+	*/
 
 	timeout := time.After(30 * time.Second)
 
@@ -240,8 +278,6 @@ func main() {
 	var endReason string
 	if *headlessFlag {
 		ticker.Stop()
-	} else {
-		defer ticker.Stop()
 	}
 loop:
 	for {
