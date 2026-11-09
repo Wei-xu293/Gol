@@ -124,7 +124,7 @@ func Step(u *model.Universe, checkCycle bool, ticks int, cnts []model.Tick, seen
 	return ticks, cnts, ""
 }
 
-func hunt(duration time.Duration, maxTicks int, u *model.Universe, first bool) {
+func hunt(duration time.Duration, maxTicks int, u *model.Universe) {
 	sigCtx, stopSignal := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stopSignal()
 	runCtx, stopTimeout := context.WithTimeout(sigCtx, duration)
@@ -236,7 +236,7 @@ func main() {
 			}
 			return
 		case "hunt":
-			hunt(30*time.Second, 10000, &u, true)
+			hunt(30*time.Second, 10000, &u)
 			return
 		default:
 			break
