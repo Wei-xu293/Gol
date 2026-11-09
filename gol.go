@@ -98,19 +98,30 @@ func printGD(gds []model.GrowthDieOff) {
 	}
 }
 
-func RunSimulation(ctx context.Context, maxTicks int, u *model.Universe, first bool, onTick func(u *model.Universe, first bool) bool) error {
-	for range maxTicks {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			if onTick != nil {
-				onTick(u, first)
-			}
-		}
-
+func Step(u *model.Universe, checkCycle bool, ticks int, cnts []model.Tick, seen map[uint32]struct{}) (int, []model.Tick, string) {
+	if ticks > 0 {
+		u.NextState()
 	}
-	return nil
+	cnts = append(cnts, model.Tick{
+		Frame:     uint32(ticks),
+		LiveCount: uint32(u.LiveCount),
+		Hash:      u.CurrentHash(),
+	})
+	ticks++
+	if checkCycle {
+		if _, ok := seen[u.CurrentHash()]; ok {
+			fmt.Printf("Cycle detected on frame %d\n", ticks-1)
+			return ticks, cnts, "cycle"
+		} else {
+			seen[u.CurrentHash()] = struct{}{}
+		}
+	}
+
+	if u.LiveCount == 0 {
+		fmt.Println("Extinction")
+		return ticks, cnts, "extinction"
+	}
+	return ticks, cnts, ""
 }
 
 func hunt(duration time.Duration, maxTicks int, u *model.Universe, first bool) {
@@ -118,9 +129,15 @@ func hunt(duration time.Duration, maxTicks int, u *model.Universe, first bool) {
 	defer stopSignal()
 	runCtx, stopTimeout := context.WithTimeout(sigCtx, duration)
 	defer stopTimeout()
-
-	err := RunSimulation(runCtx, maxTicks, u, first, nil)
-	fmt.Println(err)
+	seen := make(map[uint32]struct{})
+	ticks := 0
+	cnts := make([]model.Tick, 0)
+	end_reason := ""
+	for range maxTicks {
+		ticks, cnts, end_reason = Step(u, false, ticks, cnts, seen)
+	}
+	fmt.Println(runCtx)
+	fmt.Println(ticks, cnts, end_reason)
 }
 
 func main() {
@@ -231,17 +248,6 @@ func main() {
 	ticker := time.NewTicker(67 * time.Millisecond)
 	defer ticker.Stop()
 
-	/*
-		onTick := func(u *Universe, first bool) {
-			select {
-			case <-ticker.C:
-				u.CurrentFrame(first)
-				u.B.WriteTo(os.Stdout)
-				u.B.Reset()
-			}
-		}
-	*/
-
 	timeout := time.After(30 * time.Second)
 
 	c := make(chan os.Signal, 1)
@@ -274,18 +280,12 @@ func main() {
 
 	cnts := make([]model.Tick, 0)
 
-	first := true
 	var endReason string
-	if *headlessFlag {
-		ticker.Stop()
-	}
+	first := true
 loop:
 	for {
 		select {
 		case <-timeout:
-			if *headlessFlag {
-				continue
-			}
 			fmt.Println("Done!")
 			endReason = "timeout"
 			break loop
@@ -294,41 +294,23 @@ loop:
 			endReason = "interrupt"
 			break loop
 		case <-ticker.C:
-			if !first {
-				u.NextState()
-			}
-			cnts = append(cnts, model.Tick{
-				Frame:     uint32(ticks),
-				LiveCount: uint32(u.LiveCount),
-				Hash:      u.CurrentHash(),
-			})
+			ticks, cnts, endReason = Step(&u, *cycleFlag, ticks, cnts, seen)
 			if !*headlessFlag {
 				u.CurrentFrame(first)
 				u.B.WriteTo(os.Stdout)
 				u.B.Reset()
 			}
 			first = false
-			ticks++
-
-			if *cycleFlag {
-				if _, ok := seen[u.CurrentHash()]; ok {
-					fmt.Printf("Cycle detected on frame %d\n", ticks-1)
-					endReason = "cycle"
-					break loop
-				} else {
-					seen[u.CurrentHash()] = struct{}{}
-				}
-			}
-
-			if u.LiveCount == 0 {
-				fmt.Println("Extinction")
-				endReason = "extinction"
-				break loop
-			}
 		}
 	}
 
 	fmt.Printf("Game over after %d ticks\n", ticks)
+	switch endReason {
+	case "cycle":
+		fmt.Printf("Cycle detected on frame %d\n", ticks-1)
+	case "extinction":
+		fmt.Println("Extinction")
+	}
 
 	fmt.Printf("%d new ticks\n", len(cnts))
 	err = store.InsertTicks(ctx, db, runID, cnts)
