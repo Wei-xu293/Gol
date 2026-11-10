@@ -1,2 +1,4 @@
 gol
 gol_bench.db
+gol.db-shm
+gol.db-wal

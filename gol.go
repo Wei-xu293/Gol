@@ -98,7 +98,11 @@ func printGD(gds []model.GrowthDieOff) {
 	}
 }
 
-func Step(u *model.Universe, checkCycle bool, ticks int, cnts []model.Tick, seen map[uint32]struct{}) (int, []model.Tick, string) {
+func Step(ctx context.Context, u *model.Universe, checkCycle bool, ticks int,
+	cnts []model.Tick, seen map[uint32]struct{}) (int, []model.Tick, string, error) {
+	if err := ctx.Err(); err != nil {
+		return ticks, cnts, "", err
+	}
 	if ticks > 0 {
 		u.NextState()
 	}
@@ -110,43 +114,85 @@ func Step(u *model.Universe, checkCycle bool, ticks int, cnts []model.Tick, seen
 	ticks++
 	if checkCycle {
 		if _, ok := seen[u.CurrentHash()]; ok {
-			return ticks, cnts, "cycle"
+			return ticks, cnts, "cycle", nil
 		} else {
 			seen[u.CurrentHash()] = struct{}{}
 		}
 	}
 
 	if u.LiveCount == 0 {
-		return ticks, cnts, "extinction"
+		return ticks, cnts, "extinction", nil
 	}
-	return ticks, cnts, ""
+	return ticks, cnts, "", nil
 }
 
-func hunt(duration time.Duration, maxTicks int, u *model.Universe) {
+func headless(u *model.Universe, ticks int, cnts []model.Tick, duration time.Duration, maxTicks int) (int, []model.Tick, string) {
 	sigCtx, stopSignal := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stopSignal()
 	runCtx, stopTimeout := context.WithTimeout(sigCtx, duration)
 	defer stopTimeout()
 	seen := make(map[uint32]struct{})
-	ticks := 0
-	cnts := make([]model.Tick, 0)
 	endReason := ""
+	var err error
 	for range maxTicks {
-		ticks, cnts, endReason = Step(u, false, ticks, cnts, seen)
-		if err := runCtx.Err(); err != nil {
+		ticks, cnts, endReason, err = Step(runCtx, u, false, ticks, cnts, seen)
+		if err != nil {
 			switch {
 			case errors.Is(err, context.Canceled):
 				endReason = "interrupt"
 
 			case errors.Is(err, context.DeadlineExceeded):
-				endReason = "timetout"
+				endReason = "timeout"
 			}
 		}
 		if endReason != "" {
 			break
 		}
 	}
+	fmt.Printf("ticks: %d, len(cnts): %d\n", ticks, len(cnts))
+	if endReason == "" {
+		endReason = "finished"
+	}
 	fmt.Println(endReason)
+	return ticks, cnts, endReason
+}
+
+func terminalSimulation(u *model.Universe, ticks int, cnts []model.Tick, cycle bool) (int, []model.Tick, string) {
+	ticker := time.NewTicker(67 * time.Millisecond)
+	defer ticker.Stop()
+
+	timeout := time.After(30 * time.Second)
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+
+	seen := make(map[uint32]struct{})
+
+	var endReason string
+	first := true
+loop:
+	for {
+		select {
+		case <-timeout:
+			fmt.Println("Done!")
+			endReason = "timeout"
+			break loop
+		case interrupt := <-c:
+			fmt.Println("Got signal:", interrupt)
+			endReason = "interrupt"
+			break loop
+		case <-ticker.C:
+			ticks, cnts, endReason, _ = Step(context.TODO(), u, cycle, ticks, cnts, seen)
+			u.CurrentFrame(first)
+			u.B.WriteTo(os.Stdout)
+			u.B.Reset()
+			if endReason != "" {
+				break loop
+			}
+			first = false
+		}
+	}
+	return ticks, cnts, endReason
 }
 
 func main() {
@@ -245,7 +291,7 @@ func main() {
 			}
 			return
 		case "hunt":
-			hunt(30*time.Second, 10000, &u)
+			//hunt
 			return
 		default:
 			break
@@ -253,16 +299,6 @@ func main() {
 	}
 
 	u.CountLiveCells()
-
-	ticker := time.NewTicker(67 * time.Millisecond)
-	defer ticker.Stop()
-
-	timeout := time.After(30 * time.Second)
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-
-	seen := make(map[uint32]struct{})
 
 	var configID int64
 	if !loading {
@@ -287,33 +323,12 @@ func main() {
 	}
 	fmt.Printf("Run ID: %d\n", runID)
 
-	cnts := make([]model.Tick, 0)
-
 	var endReason string
-	first := true
-loop:
-	for {
-		select {
-		case <-timeout:
-			fmt.Println("Done!")
-			endReason = "timeout"
-			break loop
-		case interrupt := <-c:
-			fmt.Println("Got signal:", interrupt)
-			endReason = "interrupt"
-			break loop
-		case <-ticker.C:
-			ticks, cnts, endReason = Step(&u, *cycleFlag, ticks, cnts, seen)
-			if !*headlessFlag {
-				u.CurrentFrame(first)
-				u.B.WriteTo(os.Stdout)
-				u.B.Reset()
-			}
-			first = false
-			if endReason != "" {
-				break loop
-			}
-		}
+	cnts := make([]model.Tick, 0)
+	if *headlessFlag {
+		ticks, cnts, endReason = headless(&u, ticks, cnts, 30*time.Second, 10000)
+	} else {
+		ticks, cnts, endReason = terminalSimulation(&u, ticks, cnts, *cycleFlag)
 	}
 
 	fmt.Printf("Game over after %d ticks\n", ticks)
