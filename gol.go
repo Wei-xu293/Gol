@@ -110,7 +110,6 @@ func Step(u *model.Universe, checkCycle bool, ticks int, cnts []model.Tick, seen
 	ticks++
 	if checkCycle {
 		if _, ok := seen[u.CurrentHash()]; ok {
-			fmt.Printf("Cycle detected on frame %d\n", ticks-1)
 			return ticks, cnts, "cycle"
 		} else {
 			seen[u.CurrentHash()] = struct{}{}
@@ -118,7 +117,6 @@ func Step(u *model.Universe, checkCycle bool, ticks int, cnts []model.Tick, seen
 	}
 
 	if u.LiveCount == 0 {
-		fmt.Println("Extinction")
 		return ticks, cnts, "extinction"
 	}
 	return ticks, cnts, ""
@@ -132,12 +130,23 @@ func hunt(duration time.Duration, maxTicks int, u *model.Universe) {
 	seen := make(map[uint32]struct{})
 	ticks := 0
 	cnts := make([]model.Tick, 0)
-	end_reason := ""
+	endReason := ""
 	for range maxTicks {
-		ticks, cnts, end_reason = Step(u, false, ticks, cnts, seen)
+		ticks, cnts, endReason = Step(u, false, ticks, cnts, seen)
+		if err := runCtx.Err(); err != nil {
+			switch {
+			case errors.Is(err, context.Canceled):
+				endReason = "interrupt"
+
+			case errors.Is(err, context.DeadlineExceeded):
+				endReason = "timetout"
+			}
+		}
+		if endReason != "" {
+			break
+		}
 	}
-	fmt.Println(runCtx)
-	fmt.Println(ticks, cnts, end_reason)
+	fmt.Println(endReason)
 }
 
 func main() {
@@ -301,6 +310,9 @@ loop:
 				u.B.Reset()
 			}
 			first = false
+			if endReason != "" {
+				break loop
+			}
 		}
 	}
 
