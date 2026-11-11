@@ -227,6 +227,7 @@ func main() {
 	status := "up"
 	if err := db.PingContext(ctx); err != nil {
 		status = "down"
+		log.Println(status)
 		return
 	}
 	log.Println(status)

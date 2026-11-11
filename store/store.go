@@ -19,6 +19,7 @@ func createConfigsTable(ctx context.Context, db *sql.DB) error {
 			height INTEGER,
 			rule INTEGER,
 			initial_hash INTEGER,
+			initial_board BLOB,
 
 			UNIQUE (rule, initial_hash)
 		)`,
@@ -266,14 +267,15 @@ func InsertConfig(ctx context.Context, db *sql.DB, u *model.Universe) (int64, er
 	var configID int64
 	err := db.QueryRowContext(
 		ctx,
-		`INSERT INTO configs (width, height, rule, initial_hash)
-			VALUES (?, ?, ?, ?)
+		`INSERT INTO configs (width, height, rule, initial_hash, initial_board)
+			VALUES (?, ?, ?, ?, ?)
 			ON CONFLICT (rule, initial_hash) DO NOTHING
 			RETURNING id`,
 		u.Width,
 		u.Height,
 		u.Rule,
 		u.CurrentHash(),
+		u.Current,
 	).Scan(&configID)
 
 	return configID, err
@@ -303,15 +305,15 @@ func InsertConfigs(ctx context.Context, db *sql.DB, cfgs []model.Config) ([]int,
 		return cfgIDs, err
 	}
 	defer tx.Rollback()
-	stmt, errPrep := tx.Prepare(`INSERT INTO configs (width, height, rule, initial_hash)
-			VALUES (?, ?, ?, ?)`)
+	stmt, errPrep := tx.Prepare(`INSERT INTO configs (width, height, rule, initial_hash, initial_board)
+			VALUES (?, ?, ?, ?, ?)`)
 	if errPrep != nil {
 		return cfgIDs, errPrep
 	}
 	defer stmt.Close()
 
 	for _, c := range cfgs {
-		if _, execErr := stmt.Exec(c.Width, c.Height, c.Rule, c.Initial_hash); execErr != nil {
+		if _, execErr := stmt.Exec(c.Width, c.Height, c.Rule, c.Initial_hash, c.Initial_board); execErr != nil {
 			return cfgIDs, execErr
 		}
 	}

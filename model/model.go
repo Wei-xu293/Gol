@@ -23,11 +23,12 @@ type Tick struct {
 }
 
 type Config struct {
-	Id           int64
-	Width        uint32
-	Height       uint32
-	Rule         uint32
-	Initial_hash uint32
+	Id            int64
+	Width         uint32
+	Height        uint32
+	Rule          uint32
+	Initial_hash  uint32
+	Initial_board []uint8
 }
 
 type TicksInfo struct {
