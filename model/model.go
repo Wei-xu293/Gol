@@ -151,3 +151,23 @@ func ConfigFromUniv(u *Universe) Config {
 		Initial_hash: u.CurrentHash(),
 	}
 }
+
+type SeedPair struct {
+	Seed1 uint64 `json:"seed1"`
+	Seed2 uint64 `json:"seed2"`
+}
+
+func initRandomGrid(seed SeedPair, width, height uint32, fillRatio float64) Universe {
+	r := rand.New(rand.NewPCG(seed.Seed1, seed.Seed2))
+	curr := make([]uint8, width*height)
+	cnt := uint64(0)
+	for i, _ := range curr {
+		if r.Float64() < fillRatio {
+			curr[i] = 1
+		}
+		cnt += uint64(curr[i])
+	}
+	return Universe{
+		// TODO
+	}
+}
