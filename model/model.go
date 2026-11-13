@@ -23,12 +23,11 @@ type Tick struct {
 }
 
 type Config struct {
-	Id            int64
-	Width         uint32
-	Height        uint32
-	Rule          uint32
-	Initial_hash  uint32
-	Initial_board []uint8
+	Id           int64
+	Width        uint32
+	Height       uint32
+	Rule         uint32
+	Initial_hash uint32
 }
 
 type TicksInfo struct {
@@ -157,17 +156,21 @@ type SeedPair struct {
 	Seed2 uint64 `json:"seed2"`
 }
 
-func initRandomGrid(seed SeedPair, width, height uint32, fillRatio float64) Universe {
+func InitRandomGrid(seed SeedPair, width, height uint32, fillRatio float64) Universe {
 	r := rand.New(rand.NewPCG(seed.Seed1, seed.Seed2))
 	curr := make([]uint8, width*height)
 	cnt := uint64(0)
-	for i, _ := range curr {
+	for i := range curr {
 		if r.Float64() < fillRatio {
 			curr[i] = 1
 		}
 		cnt += uint64(curr[i])
 	}
 	return Universe{
-		// TODO
+		Width:     width,
+		Height:    height,
+		Current:   curr,
+		Next:      make([]uint8, width*height),
+		LiveCount: int(cnt),
 	}
 }
