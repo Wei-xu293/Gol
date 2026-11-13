@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand/v2"
 	"os"
 	"os/signal"
 	"time"
@@ -193,6 +194,34 @@ loop:
 		}
 	}
 	return ticks, cnts, endReason
+}
+
+func hunterWoker(ctx context.Context, results chan<- model.HuntResult) {
+	sp := model.SeedPair{
+		Seed1: rand.Uint64(),
+		Seed2: rand.Uint64(),
+	}
+	u := model.InitRandomGrid(sp, rand.Uint32(), rand.Uint32(), 0.25)
+	fmt.Println(u)
+	ticks := 0
+	cnts := make([]model.Tick, 0)
+	var endReason string
+	seen := make(map[uint32]struct{})
+	err := ctx.Err()
+	for {
+		if err != nil {
+			switch {
+			case errors.Is(err, context.Canceled):
+				endReason = "interrupt"
+
+			case errors.Is(err, context.DeadlineExceeded):
+				endReason = "timeout"
+			}
+			break
+		}
+		ticks, cnts, endReason, err = Step(ctx, &u, true, ticks, cnts, seen)
+	}
+	fmt.Println(endReason)
 }
 
 func main() {
