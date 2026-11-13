@@ -174,3 +174,18 @@ func InitRandomGrid(seed SeedPair, width, height uint32, fillRatio float64) Univ
 		LiveCount: int(cnt),
 	}
 }
+
+type Stabilization uint8
+
+const Unclassified Stabilization = 0
+const (
+	StillLife Stabilization = 1 << iota
+	Oscillator
+	Spaceship
+)
+
+type HuntResult struct {
+	Sp          SeedPair
+	Ticks       int
+	StabilizeAs Stabilization
+}
