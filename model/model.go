@@ -12,7 +12,7 @@ type Universe struct {
 	Current   []uint8
 	Next      []uint8
 	Rule      uint32
-	LiveCount int
+	LiveCount uint64
 	B         bytes.Buffer
 }
 
@@ -71,7 +71,7 @@ func (u *Universe) NextState() {
 			idx := i*w + j
 			shift := alive + int(u.Current[idx])*9
 			u.Next[idx] = uint8((u.Rule >> shift) & 1)
-			u.LiveCount += int(u.Next[idx])
+			u.LiveCount += uint64(u.Next[idx])
 		}
 	}
 	u.Current, u.Next = u.Next, u.Current
@@ -110,7 +110,7 @@ func (u *Universe) CurrentFrame(first bool) error {
 func (u *Universe) CountLiveCells() {
 	u.LiveCount = 0
 	for _, val := range u.Current {
-		u.LiveCount += int(val)
+		u.LiveCount += uint64(val)
 	}
 }
 
@@ -120,12 +120,12 @@ func (u *Universe) CurrentHash() uint32 {
 	return h.Sum32()
 }
 
-func RancCurrent(width uint32, height uint32) ([]uint8, int) {
-	cnt := 0
+func RancCurrent(width uint32, height uint32) ([]uint8, uint64) {
+	cnt := uint64(0)
 	curr := make([]uint8, width*height)
 	for i := range curr {
 		curr[i] = uint8(rand.UintN(2))
-		cnt += int(curr[i])
+		cnt += uint64(curr[i])
 	}
 	return curr, cnt
 }
@@ -171,7 +171,7 @@ func InitRandomGrid(seed SeedPair, width, height uint32, fillRatio float64) Univ
 		Height:    height,
 		Current:   curr,
 		Next:      make([]uint8, width*height),
-		LiveCount: int(cnt),
+		LiveCount: uint64(cnt),
 	}
 }
 

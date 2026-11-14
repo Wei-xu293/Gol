@@ -10,6 +10,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"os/signal"
+	"sync"
 	"time"
 
 	"github.com/Wei-xu293/gol/model"
@@ -196,32 +197,85 @@ loop:
 	return ticks, cnts, endReason
 }
 
-func hunterWoker(ctx context.Context, results chan<- model.HuntResult) {
+func hunterWoker(ctx context.Context) <-chan model.HuntResult {
+	result := make(chan model.HuntResult)
 	sp := model.SeedPair{
 		Seed1: rand.Uint64(),
 		Seed2: rand.Uint64(),
 	}
-	u := model.InitRandomGrid(sp, rand.Uint32(), rand.Uint32(), 0.25)
-	fmt.Println(u)
+	u := model.InitRandomGrid(sp, rand.Uint32N(10000), rand.Uint32N(10000), 0.25)
+	log.Println(u.Width, u.Height)
 	ticks := 0
 	cnts := make([]model.Tick, 0)
 	var endReason string
 	seen := make(map[uint32]struct{})
 	err := ctx.Err()
-	for {
-		if err != nil {
-			switch {
-			case errors.Is(err, context.Canceled):
-				endReason = "interrupt"
+	go func() {
+		for {
+			if err != nil {
+				switch {
+				case errors.Is(err, context.Canceled):
+					endReason = "interrupt"
 
-			case errors.Is(err, context.DeadlineExceeded):
-				endReason = "timeout"
+				case errors.Is(err, context.DeadlineExceeded):
+					endReason = "timeout"
+				}
+				break
 			}
-			break
+			ticks, cnts, endReason, err = Step(ctx, &u, true, ticks, cnts, seen)
+			if endReason != "" {
+				break
+			}
 		}
-		ticks, cnts, endReason, err = Step(ctx, &u, true, ticks, cnts, seen)
+
+		log.Println(endReason)
+		var stab model.Stabilization
+		switch endReason {
+		case "cycle":
+			stab = model.Oscillator
+		default:
+			stab = model.Unclassified
+		}
+
+		result <- model.HuntResult{
+			Sp:          sp,
+			Ticks:       ticks,
+			StabilizeAs: stab,
+		}
+		close(result)
+	}()
+	return result
+}
+
+func fanIn(inputs ...<-chan model.HuntResult) <-chan model.HuntResult {
+	res := make(chan model.HuntResult)
+	var wg sync.WaitGroup
+	for _, in := range inputs {
+		wg.Go(func() {
+			for s := range in {
+				res <- s
+			}
+		})
 	}
-	fmt.Println(endReason)
+	go func() {
+		wg.Wait()
+	}()
+	close(res)
+	return res
+}
+
+func hunt() {
+	n := 10000
+	channels := make([]<-chan model.HuntResult, n)
+	for i := range n {
+		channels[i] = hunterWoker(context.Background())
+	}
+	c := fanIn(channels...)
+
+	for res := range c {
+		fmt.Println(res)
+	}
+	fmt.Println("Finished hunting.")
 }
 
 func main() {
@@ -321,7 +375,7 @@ func main() {
 			}
 			return
 		case "hunt":
-			//hunt
+			hunt()
 			return
 		default:
 			break
