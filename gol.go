@@ -197,13 +197,14 @@ loop:
 	return ticks, cnts, endReason
 }
 
-func hunterWoker(ctx context.Context) <-chan model.HuntResult {
+func hunterWoker(ctx context.Context, rule uint32) <-chan model.HuntResult {
 	result := make(chan model.HuntResult)
 	sp := model.SeedPair{
 		Seed1: rand.Uint64(),
 		Seed2: rand.Uint64(),
 	}
-	u := model.InitRandomGrid(sp, rand.Uint32N(10000), rand.Uint32N(10000), 0.25)
+	u := model.InitRandomGrid(sp, 50, rand.Uint32N(1000), 0.25)
+	u.Rule = rule
 	log.Println(u.Width, u.Height)
 	ticks := 0
 	cnts := make([]model.Tick, 0)
@@ -259,23 +260,23 @@ func fanIn(inputs ...<-chan model.HuntResult) <-chan model.HuntResult {
 	}
 	go func() {
 		wg.Wait()
+		close(res)
 	}()
-	close(res)
 	return res
 }
 
-func hunt() {
-	n := 10000
+func hunt(rule uint32) {
+	n := 10
 	channels := make([]<-chan model.HuntResult, n)
 	for i := range n {
-		channels[i] = hunterWoker(context.Background())
+		channels[i] = hunterWoker(context.Background(), rule)
 	}
 	c := fanIn(channels...)
 
 	for res := range c {
-		fmt.Println(res)
+		log.Println(res)
 	}
-	fmt.Println("Finished hunting.")
+	log.Println("Finished hunting.")
 }
 
 func main() {
@@ -375,7 +376,7 @@ func main() {
 			}
 			return
 		case "hunt":
-			hunt()
+			hunt(0x1848)
 			return
 		default:
 			break
