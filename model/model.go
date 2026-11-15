@@ -182,6 +182,7 @@ const (
 	StillLife Stabilization = 1 << iota
 	Oscillator
 	Spaceship
+	DieHard
 )
 
 type HuntResult struct {

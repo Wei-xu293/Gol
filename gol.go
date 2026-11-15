@@ -213,6 +213,14 @@ func hunterWoker(ctx context.Context, rule uint32) <-chan model.HuntResult {
 	err := ctx.Err()
 	go func() {
 		for {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				if errors.Is(ctxErr, context.DeadlineExceeded) {
+					endReason = "timeout"
+				} else {
+					endReason = "interrupt"
+				}
+				break
+			}
 			if err != nil {
 				switch {
 				case errors.Is(err, context.Canceled):
@@ -234,6 +242,8 @@ func hunterWoker(ctx context.Context, rule uint32) <-chan model.HuntResult {
 		switch endReason {
 		case "cycle":
 			stab = model.Oscillator
+		case "extinction":
+			stab = model.DieHard
 		default:
 			stab = model.Unclassified
 		}
@@ -269,7 +279,9 @@ func hunt(rule uint32) {
 	n := 10
 	channels := make([]<-chan model.HuntResult, n)
 	for i := range n {
-		channels[i] = hunterWoker(context.Background(), rule)
+		ctx, stop := context.WithTimeout(context.Background(), time.Second*20)
+		defer stop()
+		channels[i] = hunterWoker(ctx, rule)
 	}
 	c := fanIn(channels...)
 
