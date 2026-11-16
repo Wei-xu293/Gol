@@ -197,6 +197,10 @@ loop:
 	return ticks, cnts, endReason
 }
 
+func HunterStep() {
+
+}
+
 func hunterWoker(ctx context.Context, rule uint32) <-chan model.HuntResult {
 	result := make(chan model.HuntResult)
 	sp := model.SeedPair{

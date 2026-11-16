@@ -142,6 +142,16 @@ func RandUniverse(size uint32, rule uint32) Universe {
 	}
 }
 
+func (u Universe) Clone() Universe {
+	clone := u
+	if u.Current != nil {
+		clone.Current = make([]uint8, u.Width*u.Height)
+		copy(clone.Current, u.Current)
+	}
+	clone.Next = make([]uint8, u.Width*u.Height)
+	return clone
+}
+
 func ConfigFromUniv(u *Universe) Config {
 	return Config{
 		Width:        u.Width,
