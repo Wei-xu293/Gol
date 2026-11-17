@@ -10,6 +10,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"os/signal"
+	"slices"
 	"sync"
 	"time"
 
@@ -197,8 +198,26 @@ loop:
 	return ticks, cnts, endReason
 }
 
-func HunterStep() {
-
+func HunterStep(ctx context.Context, u *model.Universe, maxTicks uint64) error {
+	cl := u.Clone()
+	cl.NextState()
+	cycle := false
+	for range maxTicks {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if slices.Equal(cl.Current, u.Current) {
+			cycle = true
+			break
+		}
+		u.NextState()
+		cl.NextState()
+	}
+	if cycle { // find starting cycle (set one universe to the origin again)
+		// normalize states -> detect
+		fmt.Println("cycle")
+	}
+	return nil
 }
 
 func hunterWoker(ctx context.Context, rule uint32) <-chan model.HuntResult {

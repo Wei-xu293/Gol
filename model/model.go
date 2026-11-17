@@ -54,7 +54,7 @@ var dirs = [8][2]int{
 	{1, -1}, {1, 0}, {1, 1},
 }
 
-// TODO: count distinct cells version
+// TODO: count distinct cells version, repeated counting happens when warped around edge cases.
 func (u *Universe) NextState() {
 	w, h := int(u.Width), int(u.Height)
 	u.LiveCount = 0
