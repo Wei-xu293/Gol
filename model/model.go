@@ -200,3 +200,29 @@ type HuntResult struct {
 	Ticks       int
 	StabilizeAs Stabilization
 }
+
+func Extract2D[T any](values []T, x, y, ow, oh, w, h int) [][]T {
+	mat := make([][]T, h)
+	for i := range h {
+		mat[i] = make([]T, w)
+	}
+	i, j := 0, 0
+	iniY := y
+	for range h * w {
+		pos := x + y*ow
+		mat[i][j] = values[pos]
+		j++
+		y++
+		if j == w {
+			j = 0
+			i++
+			y = iniY
+			x++
+		}
+	}
+	return mat
+}
+
+func Box(board []uint8) (int, int) {
+	return -1, -1
+}
