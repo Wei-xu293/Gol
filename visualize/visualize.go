@@ -66,27 +66,50 @@ func (qt *QuadTree) subdivide() {
 	}
 }
 
-func (qt *QuadTree) insert(p Point) bool {
-	if len(qt.Points) < int(qt.Capacity) {
-		qt.Points = append(qt.Points, p)
-		return true
-	}
-	if qt.NorthWest == nil {
-		qt.subdivide()
-	}
+func (qt *QuadTree) isLeaf() bool { return qt.NorthWest == nil }
+
+func (qt *QuadTree) routePoint(p Point) {
 	goRight := p.X >= qt.Boundary.Center.X
 	goTop := p.Y < qt.Boundary.Center.Y
 	child := b2i(goTop)*2 + b2i(goRight)
 	switch child {
 	case 3:
-		return qt.NorthEast.insert(p)
+		qt.NorthEast.insert(p)
 	case 2:
-		return qt.NorthWest.insert(p)
+		qt.NorthWest.insert(p)
 	case 1:
-		return qt.SouthEast.insert(p)
+		qt.SouthEast.insert(p)
 	default:
-		return qt.SouthWest.insert(p)
+		qt.SouthWest.insert(p)
 	}
+}
+
+func (qt *QuadTree) insert(p Point) {
+	if qt.isLeaf() {
+		if len(qt.Points) < qt.Capacity {
+			qt.Points = append(qt.Points, p)
+		} else {
+			qt.subdivide()
+			toInsert := make([]Point, 0)
+			toInsert = append(toInsert, qt.Points...)
+			toInsert = append(toInsert, p)
+			qt.Points = nil
+			for _, pi := range toInsert {
+				qt.routePoint(pi)
+			}
+		}
+	} else {
+		qt.routePoint(p)
+	}
+}
+
+// Returns true if the point was inserted; false if outside the tree's boundary.
+func (qt *QuadTree) Insert(p Point) bool {
+	if !qt.Boundary.contains(p) {
+		return false
+	}
+	qt.insert(p)
+	return true
 }
 
 func (qt *QuadTree) show() {
@@ -137,8 +160,11 @@ func View() {
 		Boundary: AABB{Point{300, 300}, 300, 300},
 		Capacity: 4,
 	}
-	for range 10 {
-		qt.insert(Point{rand.Int32N(600), rand.Int32N(600)})
+	for range 500 {
+		p := Point{rand.Int32N(800), rand.Int32N(800)}
+		if !qt.Insert(p) {
+			fmt.Println(p)
+		}
 	}
 	for !rl.WindowShouldClose() {
 		rl.BeginDrawing()
