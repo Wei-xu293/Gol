@@ -16,6 +16,7 @@ import (
 
 	"github.com/Wei-xu293/gol/model"
 	"github.com/Wei-xu293/gol/store"
+	"github.com/Wei-xu293/gol/visualize"
 	_ "modernc.org/sqlite"
 )
 
@@ -333,6 +334,8 @@ func main() {
 
 	headlessFlag := flag.Bool("headless", false, "headless run")
 
+	//visualCmd := flag.NewFlagSet("visualize", flag.ExitOnError)
+
 	flag.Parse()
 
 	ctx := context.Background()
@@ -412,6 +415,9 @@ func main() {
 			return
 		case "hunt":
 			hunt(0x1848)
+			return
+		case "vis":
+			visualize.View()
 			return
 		default:
 			break

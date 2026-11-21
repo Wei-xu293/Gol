@@ -2,11 +2,16 @@ module github.com/Wei-xu293/gol
 
 go 1.27.1
 
-require modernc.org/sqlite v1.60.1
+require (
+	github.com/gen2brain/raylib-go/raylib v0.63.0
+	modernc.org/sqlite v1.60.1
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/ebitengine/purego v0.10.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/jupiterrider/ffi v0.8.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
