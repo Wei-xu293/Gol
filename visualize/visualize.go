@@ -68,11 +68,14 @@ func (qt *QuadTree) subdivide() {
 
 func (qt *QuadTree) isLeaf() bool { return qt.NorthWest == nil }
 
-func (qt *QuadTree) routePoint(p Point) {
+func (qt *QuadTree) routeDirection(p Point) int {
 	goRight := p.X >= qt.Boundary.Center.X
 	goTop := p.Y < qt.Boundary.Center.Y
-	child := b2i(goTop)*2 + b2i(goRight)
-	switch child {
+	return b2i(goTop)*2 + b2i(goRight)
+}
+
+func (qt *QuadTree) routePoint(p Point) {
+	switch qt.routeDirection(p) {
 	case 3:
 		qt.NorthEast.insert(p)
 	case 2:
@@ -112,11 +115,44 @@ func (qt *QuadTree) Insert(p Point) bool {
 	return true
 }
 
+func (qt *QuadTree) Find(p Point) (Point, bool) {
+	if qt == nil {
+		return p, false
+	}
+	if qt.isLeaf() {
+		for _, pi := range qt.Points {
+			if p == pi {
+				return pi, true
+			}
+		}
+	}
+	switch qt.routeDirection(p) {
+	case 3:
+		return qt.NorthEast.Find(p)
+	case 2:
+		return qt.NorthWest.Find(p)
+	case 1:
+		return qt.SouthEast.Find(p)
+	default:
+		return qt.SouthWest.Find(p)
+	}
+}
+
+func (qt *QuadTree) Contains(p Point) bool {
+	if !qt.Boundary.contains(p) {
+		return false
+	}
+	_, found := qt.Find(p)
+	return found
+}
+
 func (qt *QuadTree) show() {
 	if qt == nil {
 		return
 	}
-	qt.Boundary.draw()
+	if qt.isLeaf() {
+		qt.Boundary.draw()
+	}
 	if qt.NorthWest != nil {
 		qt.NorthWest.show()
 		qt.NorthEast.show()
@@ -161,7 +197,7 @@ func View() {
 		Capacity: 4,
 	}
 	for range 500 {
-		p := Point{rand.Int32N(800), rand.Int32N(800)}
+		p := Point{rand.Int32N(650), rand.Int32N(650)}
 		if !qt.Insert(p) {
 			fmt.Println(p)
 		}
