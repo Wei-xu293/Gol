@@ -217,6 +217,9 @@ func HunterStep(ctx context.Context, u *model.Universe, maxTicks uint64, sp mode
 	if cycle {
 		// find starting cycle (set one universe to the origin again)
 		org := model.InitRandomGrid(sp, u.Width, u.Height, 0.25)
+		for !slices.Equal(org.Current, u.Current) {
+			org.NextState()
+		}
 		// normalize states -> detect
 		fmt.Println("cycle")
 	}
