@@ -22,12 +22,18 @@ type Tick struct {
 	Hash      uint32
 }
 
+type SeedPair struct {
+	Seed1 uint64 `json:"seed1"`
+	Seed2 uint64 `json:"seed2"`
+}
+
 type Config struct {
 	Id           int64
 	Width        uint32
 	Height       uint32
 	Rule         uint32
 	Initial_hash uint32
+	sp           SeedPair
 }
 
 type TicksInfo struct {
@@ -46,6 +52,26 @@ type SaveInfo struct {
 	Name  string
 	RunID int
 	Frame int
+}
+
+type Point2DFloat struct {
+	X, Y float32
+}
+
+type Stabilization uint8
+
+const Unclassified Stabilization = 0
+const (
+	StillLife Stabilization = 1 << iota
+	Oscillator
+	Spaceship
+	DieHard
+)
+
+type HuntResult struct {
+	Sp          SeedPair
+	Ticks       int
+	StabilizeAs Stabilization
 }
 
 var dirs = [8][2]int{
@@ -161,11 +187,6 @@ func ConfigFromUniv(u *Universe) Config {
 	}
 }
 
-type SeedPair struct {
-	Seed1 uint64 `json:"seed1"`
-	Seed2 uint64 `json:"seed2"`
-}
-
 func InitRandomGrid(seed SeedPair, width, height uint32, fillRatio float64) Universe {
 	r := rand.New(rand.NewPCG(seed.Seed1, seed.Seed2))
 	curr := make([]uint8, width*height)
@@ -183,22 +204,6 @@ func InitRandomGrid(seed SeedPair, width, height uint32, fillRatio float64) Univ
 		Next:      make([]uint8, width*height),
 		LiveCount: uint64(cnt),
 	}
-}
-
-type Stabilization uint8
-
-const Unclassified Stabilization = 0
-const (
-	StillLife Stabilization = 1 << iota
-	Oscillator
-	Spaceship
-	DieHard
-)
-
-type HuntResult struct {
-	Sp          SeedPair
-	Ticks       int
-	StabilizeAs Stabilization
 }
 
 func Extract2D[T any](values []T, x, y, ow, oh, w, h int) [][]T {
@@ -225,4 +230,20 @@ func Extract2D[T any](values []T, x, y, ow, oh, w, h int) [][]T {
 
 func Box(board []uint8) (int, int) {
 	return -1, -1
+}
+
+func (u *Universe) Centroid() Point2DFloat {
+	x, y := float32(0), float32(0)
+	for i := range u.Height {
+		for j := range u.Width {
+			if u.Current[i*u.Width+j] == 1 {
+				x += float32(i)
+				y += float32(j)
+			}
+		}
+	}
+	n := u.LiveCount
+	x /= float32(n)
+	y /= float32(n)
+	return Point2DFloat{x, y}
 }

@@ -199,7 +199,7 @@ loop:
 	return ticks, cnts, endReason
 }
 
-func HunterStep(ctx context.Context, u *model.Universe, maxTicks uint64) error {
+func HunterStep(ctx context.Context, u *model.Universe, maxTicks uint64, sp model.SeedPair) error {
 	cl := u.Clone()
 	cl.NextState()
 	cycle := false
@@ -214,7 +214,9 @@ func HunterStep(ctx context.Context, u *model.Universe, maxTicks uint64) error {
 		u.NextState()
 		cl.NextState()
 	}
-	if cycle { // find starting cycle (set one universe to the origin again)
+	if cycle {
+		// find starting cycle (set one universe to the origin again)
+		org := model.InitRandomGrid(sp, u.Width, u.Height, 0.25)
 		// normalize states -> detect
 		fmt.Println("cycle")
 	}
