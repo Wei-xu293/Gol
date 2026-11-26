@@ -199,20 +199,28 @@ loop:
 	return ticks, cnts, endReason
 }
 
-func HunterStep(ctx context.Context, u *model.Universe, maxTicks uint64, sp model.SeedPair) error {
-	cl := u.Clone()
-	cl.NextState()
+func HunterStep(ctx context.Context, u *model.Universe, sp model.SeedPair) error {
+	hare := u.Clone()
+	hare.NextState()
 	cycle := false
-	for range maxTicks {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return ctxErr
-		}
-		if slices.Equal(cl.Current, u.Current) {
+	spaceShip := false
+	ticks := 0
+	for ctx.Err() != nil {
+		if slices.Equal(hare.Current, u.Current) {
 			cycle = true
 			break
 		}
+		if hare.Centroid() == u.Centroid() {
+			spaceShip = true
+			break
+		}
+		ticks++
 		u.NextState()
-		cl.NextState()
+		hare.NextState()
+	}
+	if spaceShip {
+		fmt.Println("space")
+		return nil
 	}
 	if cycle {
 		// find starting cycle (set one universe to the origin again)
@@ -220,10 +228,23 @@ func HunterStep(ctx context.Context, u *model.Universe, maxTicks uint64, sp mode
 		for !slices.Equal(org.Current, u.Current) {
 			org.NextState()
 		}
-		// normalize states -> detect
-		fmt.Println("cycle")
+		org.NextState()
+		cycleLen := 0
+		for !slices.Equal(org.Current, hare.Current) {
+			cycleLen++
+			org.NextState()
+		}
+		fmt.Printf("cycle len %d\n", cycleLen)
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
 	}
 	return nil
+}
+
+func HunterWoker(ctx context.Context, rule uint32) <-chan model.HuntResult {
+	result := make(chan model.HuntResult)
+	return result
 }
 
 func hunterWoker(ctx context.Context, rule uint32) <-chan model.HuntResult {
@@ -287,16 +308,18 @@ func hunterWoker(ctx context.Context, rule uint32) <-chan model.HuntResult {
 	return result
 }
 
+// Generator of hunt results
 func fanIn(inputs ...<-chan model.HuntResult) <-chan model.HuntResult {
 	res := make(chan model.HuntResult)
 	var wg sync.WaitGroup
 	for _, in := range inputs {
-		wg.Go(func() {
+		wg.Go(func() { // streaming values as they arrive
 			for s := range in {
 				res <- s
 			}
 		})
 	}
+	// termination signaling with close after waiting
 	go func() {
 		wg.Wait()
 		close(res)
