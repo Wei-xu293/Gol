@@ -199,13 +199,18 @@ loop:
 	return ticks, cnts, endReason
 }
 
-func HunterStep(ctx context.Context, u *model.Universe, sp model.SeedPair) error {
+func HunterStep(ctx context.Context, u *model.Universe, sp model.SeedPair, hr *model.HuntResult) error {
 	hare := u.Clone()
 	hare.NextState()
 	cycle := false
 	spaceShip := false
 	ticks := 0
-	for ctx.Err() != nil {
+	u.CountLiveCells()
+	hare.CountLiveCells()
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if slices.Equal(hare.Current, u.Current) {
 			cycle = true
 			break
@@ -217,22 +222,36 @@ func HunterStep(ctx context.Context, u *model.Universe, sp model.SeedPair) error
 		ticks++
 		u.NextState()
 		hare.NextState()
+		if u.LiveCount == 0 && hare.LiveCount == 0 {
+			hr.Ticks = ticks
+			hr.StabilizeAs = model.DieHard
+		}
 	}
 	if spaceShip {
 		fmt.Println("space")
+		hr.Ticks = ticks
+		hr.StabilizeAs = model.Spaceship
 		return nil
 	}
 	if cycle {
 		// find starting cycle (set one universe to the origin again)
-		org := model.InitRandomGrid(sp, u.Width, u.Height, 0.25)
+		org := model.InitRandomGrid(sp, u.Width, u.Height, 0.48)
+		start := 0
 		for !slices.Equal(org.Current, u.Current) {
+			start++
 			org.NextState()
 		}
+		hr.Ticks = start
 		org.NextState()
-		cycleLen := 0
+		cycleLen := 1
 		for !slices.Equal(org.Current, hare.Current) {
 			cycleLen++
 			org.NextState()
+		}
+		if cycleLen == 1 {
+			hr.StabilizeAs = model.StillLife
+		} else {
+			hr.StabilizeAs = model.Oscillator
 		}
 		fmt.Printf("cycle len %d\n", cycleLen)
 	}
@@ -244,6 +263,25 @@ func HunterStep(ctx context.Context, u *model.Universe, sp model.SeedPair) error
 
 func HunterWoker(ctx context.Context, rule uint32) <-chan model.HuntResult {
 	result := make(chan model.HuntResult)
+	go func() {
+		sp := model.SeedPair{
+			Seed1: rand.Uint64(),
+			Seed2: rand.Uint64(),
+		}
+		u := model.InitRandomGrid(sp, 50, rand.Uint32N(1000), 0.48)
+		u.Rule = rule
+		log.Println(u.Width, u.Height)
+		var hr model.HuntResult
+		hr.Sp = sp
+		err := HunterStep(ctx, &u, sp, &hr)
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				hr.StabilizeAs = model.Unclassified
+			}
+		}
+		result <- hr
+		close(result)
+	}()
 	return result
 }
 
@@ -333,12 +371,12 @@ func hunt(rule uint32) {
 	for i := range n {
 		ctx, stop := context.WithTimeout(context.Background(), time.Second*20)
 		defer stop()
-		channels[i] = hunterWoker(ctx, rule)
+		channels[i] = HunterWoker(ctx, rule)
 	}
 	c := fanIn(channels...)
 
 	for res := range c {
-		log.Println(res)
+		log.Printf("%#v\n", res)
 	}
 	log.Println("Finished hunting.")
 }

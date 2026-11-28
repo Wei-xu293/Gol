@@ -62,9 +62,13 @@ type Stabilization uint8
 
 const Unclassified Stabilization = 0
 const (
+	// Patterns that does not change from one generation to the next.
 	StillLife Stabilization = 1 << iota
+	// Patterns that eventually stabilize in a constellation of periodic, unmoving objects.
 	Oscillator
+	// Patterns that eventually create a set of periodic, moving objects (spaceships) that escape to infinity.
 	Spaceship
+	// Patterns that eventually die out entirely.
 	DieHard
 )
 
